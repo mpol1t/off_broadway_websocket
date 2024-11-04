@@ -1,0 +1,16 @@
+repos:
+  - repo: local
+    hooks:
+      # Run ExUnit to ensure tests pass before committing
+      - id: mix-test
+        name: Run Tests
+        entry: mix test
+        language: system
+        pass_filenames: false
+
+      # Run Dialyzer for static code analysis
+      - id: mix-dialyzer
+        name: Dialyzer Static Analysis
+        entry: mix dialyzer
+        language: system
+        pass_filenames: false
