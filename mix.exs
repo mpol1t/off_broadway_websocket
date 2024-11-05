@@ -8,9 +8,11 @@ defmodule OffBroadwayWebsocket.MixProject do
       elixir:           "~> 1.16",
       start_permanent:  Mix.env() == :prod,
       deps:             deps(),
-      description:      "An Off-Broadway producer enabling real-time ingestion of WebSocket data with backpressure management in Elixir ",
-      licenses:         ["Apache-2.0"],
-      links:            %{"GitHub" => "https://github.com/mpol1t/off_broadway_websocket"}
+      description:      "An Off-Broadway producer enabling real-time ingestion of WebSocket data with backpressure management in Elixir.",
+      package:          [
+        licenses:         ["Apache-2.0"],
+        links:            %{"GitHub" => "https://github.com/mpol1t/off_broadway_websocket"}
+      ]
     ]
   end
 
