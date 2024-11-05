@@ -1,0 +1,56 @@
+name: Elixir CI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    name: Build, Test, and Dialyzer
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@61e01a43a562a89bfc54c7f9a378ff67b03e4a21 # v1.16.0
+        with:
+          elixir-version: '1.16.3'
+          otp-version: '26.0'
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Run tests
+        run: mix test
+
+      # Cache PLT (Persistent Lookup Table) for Dialyzer
+      - name: Cache Dialyzer PLT
+        uses: actions/cache@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-dialyzer-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-dialyzer
+
+      # Build PLT if not cached
+      - name: Build PLT
+        run: mix dialyzer --plt
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      # Run Dialyzer for static analysis
+      - name: Run Dialyzer
+        run: mix dialyzer
+
+#      - name: Run Credo Linter
+#        run: mix credo
