@@ -8,7 +8,7 @@ defmodule OffBroadwayWebsocket.MixProject do
       elixir:           "~> 1.16",
       start_permanent:  Mix.env() == :prod,
       deps:             deps(),
-      description:      "An Off-Broadway producer enabling real-time ingestion of WebSocket data with backpressure management in Elixir.",
+      description:      "An Off-Broadway producer enabling real-time ingestion of WebSocket data.",
       package:          [
         licenses:         ["Apache-2.0"],
         links:            %{"GitHub" => "https://github.com/mpol1t/off_broadway_websocket"}
@@ -32,8 +32,9 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:ssl_verify_fun, "~> 1.1"},
       {:jason,          "~> 1.4"},
       {:broadway,       "~> 1.1.0"},
-      {:dialyxir,       "~> 1.4", only: [:dev, :test], runtime: false},
-      {:stream_data,    "~> 0.6", only: [:dev, :test]},
+      {:dialyxir,       "~> 1.4",     only: [:dev, :test],  runtime: false},
+      {:stream_data,    "~> 0.6",     only: [:dev, :test]},
+      {:ex_doc,         "~> 0.34.2",  only: :dev,           runtime: false},
     ]
   end
 end
