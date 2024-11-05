@@ -16,7 +16,7 @@ Add `off_broadway_websocket` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, path: "../path_to_your_library"}
+    {:off_broadway_websocket, "~> 0.0.1"}
   ]
 end
 ```
@@ -40,14 +40,13 @@ defmodule MyApp.Broadway do
   require Logger
 
   alias Broadway.Message
-  alias OffBroadwayWebSocket.Producer
 
   def start_link(_args) do
     Broadway.start_link(__MODULE__,
       name: __MODULE__,
       producer: [
         module: {
-          Producer,
+          OffBroadwayWebSocket.Producer,
           url: "wss://example.com",
           path: "/path_to_ws_endpoint",
           reconnect_delay: 5_000,
@@ -114,6 +113,8 @@ end
 - **reconnect_max_delay**: Maximum delay between reconnection attempts.
 - **ws_opts**: WebSocket-specific options passed to the **gun 2.1** library, such as `keepalive` and `silence_pings`.
 - **http_opts**: HTTP-specific options also compatible with **gun 2.1**, including version or custom headers.
+
+Complete list of options accepted by `http_opts` and `ws_opts` is available [here](https://ninenines.eu/docs/en/gun/2.1/manual/gun/).
 
 ### Running Tests
 
