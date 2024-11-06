@@ -59,7 +59,7 @@ defmodule OffBroadwayWebSocket.State do
              }
 
   @doc """
-  Creates a new `%State{}` struct with specified options.
+  Creates a new **%State{}** struct with specified options.
 
   ## Parameters
     - **opts**: A keyword list of options, including:
@@ -67,12 +67,12 @@ defmodule OffBroadwayWebSocket.State do
       - **:url** - The WebSocket URL.
       - **:path** - The WebSocket path.
       - **:reconnect_delay** - Optional delay in milliseconds for reconnection.
-      - **:ws_opts** - WebSocket options for `gun`.
-      - **:http_opts** - HTTP options for `gun`.
+      - **:ws_opts** - WebSocket options for **gun**.
+      - **:http_opts** - HTTP options for **gun**.
       - **:ws_timeout** - Optional timeout for WebSocket operations.
 
   ## Returns
-    - A `%State{}` struct initialized with the provided options and default values.
+    - A **%State{}** struct initialized with the provided options and default values.
   """
   @spec new(keyword()) :: t()
   def new(opts) do

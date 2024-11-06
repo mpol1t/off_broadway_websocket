@@ -52,7 +52,14 @@ defmodule OffBroadwayWebSocket.Producer do
   @impl true
   def handle_info({:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers}, %State{ws_timeout: t} = state) do
     Logger.debug("[Producer] WebSocket upgrade message received.")
-    Process.send_after(self(), :check_ws_timeout, t)
+
+    case t do
+      nil -> nil
+      _   ->
+        Logger.debug("[Producer] First timeout check scheduled in #{t / 1_000}s")
+        Process.send_after(self(), :check_ws_timeout, t)
+    end
+
     {:noreply, [], %State{state | conn_pid: conn_pid, stream_ref: stream_ref}}
   end
 
