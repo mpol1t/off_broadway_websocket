@@ -13,13 +13,13 @@ defmodule OffBroadwayWebSocket.Utils do
   it returns an empty response.
 
   ## Parameters
-    - **queue**: The queue from which to pull items (of type `:queue.queue()`).
+    - **queue**: The queue from which to pull items (of type **:queue.queue()**).
     - **min_demand**: The minimum demand threshold (non-negative integer).
     - **size**: The current size of the queue (non-negative integer).
     - **demand**: The number of items requested (non-negative integer).
 
   ## Returns
-    - A tuple `{count, items, new_queue}` where:
+    - A tuple **{count, items, new_queue}** where:
       - **count** is the number of items actually returned (non-negative integer).
       - **items** is a list of items retrieved from the queue.
       - **new_queue** is the updated queue after the demand is processed.
@@ -40,11 +40,11 @@ defmodule OffBroadwayWebSocket.Utils do
   than **n** items, it retrieves as many as possible.
 
   ## Parameters
-    - **queue**: The queue from which to pop items (of type `:queue.queue()`).
+    - **queue**: The queue from which to pop items (of type **:queue.queue()**).
     - **n**: The number of items to retrieve (non-negative integer).
 
   ## Returns
-    - A tuple `{count, items, new_queue}` where:
+    - A tuple **{count, items, new_queue}** where:
       - **count** is the actual number of items popped from the queue (non-negative integer).
       - **items** is a list of the retrieved items.
       - **new_queue** is the queue after items have been popped.
@@ -65,19 +65,19 @@ defmodule OffBroadwayWebSocket.Utils do
   end
 
   @doc """
-  Conditionally adds a key-value pair to a map if the value is not `nil`.
+  Conditionally adds a key-value pair to a map if the value is not **nil**.
 
-  If the provided value is `nil`, the function returns the original map without modification.
+  If the provided value is **nil**, the function returns the original map without modification.
   Otherwise, it adds the key-value pair to the map.
 
   ## Parameters
     - **opts**: The initial map to which the key-value pair may be added.
-    - **name**: The key to add to the map if `add_opts` is not `nil`.
-    - **add_opts**: The value to associate with `name`. If `nil`, `opts` is returned unmodified.
+    - **name**: The key to add to the map if **add_opts** is not **nil**.
+    - **add_opts**: The value to associate with **name**. If **nil**, **opts** is returned unmodified.
 
   ## Returns
-    - The updated map if `add_opts` is not `nil`.
-    - The original map if `add_opts` is `nil`.
+    - The updated map if **add_opts** is not **nil**.
+    - The original map if **add_opts** is **nil**.
   """
   @spec put_with_nil(map(), any(), any() | nil) :: map()
   def put_with_nil(opts, _name, nil),      do: opts
