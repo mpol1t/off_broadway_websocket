@@ -1,6 +1,20 @@
 repos:
   - repo: local
     hooks:
+      # Run Elixir's mix format before committing
+      - id: mix-format
+        name: Mix Format
+        entry: mix format --check-formatted
+        language: system
+        pass_filenames: false
+
+      # Run Credo for linting
+      - id: mix-credo
+        name: Credo Linter
+        entry: mix credo --strict
+        language: system
+        pass_filenames: false
+
       # Run ExUnit to ensure tests pass before committing
       - id: mix-test
         name: Run Tests

@@ -10,8 +10,8 @@ defmodule OffBroadwayWebSocket.Producer do
   use GenStage
   require Logger
 
-  alias OffBroadwayWebSocket.State
   alias OffBroadwayWebSocket.Client
+  alias OffBroadwayWebSocket.State
   alias OffBroadwayWebSocket.Utils
 
   @behaviour Broadway.Producer
@@ -30,12 +30,12 @@ defmodule OffBroadwayWebSocket.Producer do
   def handle_info(
         :connect,
         %State{
-          url:              url,
-          path:             path,
-          http_opts:        http_opts,
-          ws_opts:          ws_opts,
-          await_timeout:    await_timeout,
-          connect_timeout:  connect_timeout
+          url: url,
+          path: path,
+          http_opts: http_opts,
+          ws_opts: ws_opts,
+          await_timeout: await_timeout,
+          connect_timeout: connect_timeout
         } = state
       ) do
     case Client.connect(url, path, {http_opts, ws_opts}, await_timeout, connect_timeout) do
@@ -50,12 +50,17 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def handle_info({:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers}, %State{ws_timeout: t} = state) do
+  def handle_info(
+        {:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers},
+        %State{ws_timeout: t} = state
+      ) do
     Logger.debug("[Producer] WebSocket upgrade message received.")
 
     case t do
-      nil -> nil
-      _   ->
+      nil ->
+        nil
+
+      _ ->
         Logger.debug("[Producer] First timeout check scheduled in #{t / 1_000}s")
         Process.send_after(self(), :check_ws_timeout, t)
     end
@@ -74,7 +79,10 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def handle_info({:gun_ws, _conn_pid, _stream_ref, {_, msg}}, %State{message_queue: q, queue_size: s} = state) do
+  def handle_info(
+        {:gun_ws, _conn_pid, _stream_ref, {_, msg}},
+        %State{message_queue: q, queue_size: s} = state
+      ) do
     dispatch_events(%State{state | message_queue: :queue.in(msg, q), queue_size: s + 1}, 0)
   end
 
@@ -89,12 +97,12 @@ defmodule OffBroadwayWebSocket.Producer do
   def handle_info(
         :reconnect,
         %State{
-          url:                url,
-          path:               path,
-          ws_opts:            ws_opts,
-          http_opts:          http_opts,
-          await_timeout:      await_timeout,
-          connect_timeout:    connect_timeout,
+          url: url,
+          path: path,
+          ws_opts: ws_opts,
+          http_opts: http_opts,
+          await_timeout: await_timeout,
+          connect_timeout: connect_timeout,
           reconnect_attempts: reconnect_attempts
         } = state
       ) do
@@ -120,7 +128,9 @@ defmodule OffBroadwayWebSocket.Producer do
   @impl true
   def handle_info(:check_ws_timeout, %State{ws_timeout: ws_timeout, last_pong: t} = state) do
     case DateTime.diff(DateTime.utc_now(), t) > ws_timeout / 1_000 do
-      true  -> on_ws_timeout(state)
+      true ->
+        on_ws_timeout(state)
+
       false ->
         Process.send_after(self(), :check_ws_timeout, ws_timeout)
         {:noreply, [], state}
@@ -150,7 +160,8 @@ defmodule OffBroadwayWebSocket.Producer do
 
     {c, events, rest} = Utils.on_demand(q, m, s, new_demand)
 
-    {:noreply, events, %State{state | total_demand: new_demand - c, message_queue: rest, queue_size: s - c}}
+    {:noreply, events,
+     %State{state | total_demand: new_demand - c, message_queue: rest, queue_size: s - c}}
   end
 
   @impl true
@@ -163,7 +174,10 @@ defmodule OffBroadwayWebSocket.Producer do
   def terminate(_reason, _state), do: :ok
 
   @doc false
-  defp schedule_reconnect(%State{reconnect_delay: reconnect_delay, reconnect_max_delay: reconnect_max_delay} = state) do
+  defp schedule_reconnect(
+         %State{reconnect_delay: reconnect_delay, reconnect_max_delay: reconnect_max_delay} =
+           state
+       ) do
     delay = min(reconnect_delay * 2, reconnect_max_delay)
     Logger.debug("[Producer] Scheduling reconnect in #{delay / 1_000}s.")
     Process.send_after(self(), :reconnect, delay)

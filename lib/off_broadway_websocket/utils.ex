@@ -30,8 +30,8 @@ defmodule OffBroadwayWebSocket.Utils do
           non_neg_integer(),
           non_neg_integer()
         ) :: {non_neg_integer(), list(), Types.queue()}
-  def on_demand(queue,  min_demand,  size,  demand) when size >= min_demand,  do: pop_n(queue, demand)
-  def on_demand(queue, _min_demand, _size, _demand),                          do: {0, [], queue}
+  def on_demand(queue, min_demand, size, demand) when size >= min_demand, do: pop_n(queue, demand)
+  def on_demand(queue, _min_demand, _size, _demand), do: {0, [], queue}
 
   @doc """
   Retrieves up to **n** items from the queue.
@@ -54,13 +54,17 @@ defmodule OffBroadwayWebSocket.Utils do
 
   @doc false
   @spec pop_n_aux(
-          Types.queue(), non_neg_integer(), list(), non_neg_integer()
+          Types.queue(),
+          non_neg_integer(),
+          list(),
+          non_neg_integer()
         ) :: {non_neg_integer(), list(), Types.queue()}
   defp pop_n_aux(queue, 0, acc, counter), do: {counter, Enum.reverse(acc), queue}
-  defp pop_n_aux(queue, n, acc, counter)  do
+
+  defp pop_n_aux(queue, n, acc, counter) do
     case :queue.out(queue) do
-      {{:value, v},  rest}  -> pop_n_aux(rest, n - 1, [ v | acc ], counter + 1)
-      {:empty,      _rest}  -> {counter, Enum.reverse(acc), :queue.new()}
+      {{:value, v}, rest} -> pop_n_aux(rest, n - 1, [v | acc], counter + 1)
+      {:empty, _rest} -> {counter, Enum.reverse(acc), :queue.new()}
     end
   end
 
@@ -80,6 +84,6 @@ defmodule OffBroadwayWebSocket.Utils do
     - The original map if **add_opts** is **nil**.
   """
   @spec put_with_nil(map(), any(), any() | nil) :: map()
-  def put_with_nil(opts, _name, nil),      do: opts
-  def put_with_nil(opts,  name, add_opts), do: Map.put(opts, name, add_opts)
+  def put_with_nil(opts, _name, nil), do: opts
+  def put_with_nil(opts, name, add_opts), do: Map.put(opts, name, add_opts)
 end
