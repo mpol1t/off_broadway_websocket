@@ -97,9 +97,9 @@ defmodule OffBroadwayWebSocket.State do
   end
 
   @doc false
-  @spec get_min_max_demand(keyword()) :: {non_neg_integer(), non_neg_integer()}
+  @spec get_min_max_demand(keyword() | nil) :: {non_neg_integer(), non_neg_integer()}
   defp get_min_max_demand(opts) do
-    default_processors = Keyword.get(opts, :processors, []) |> Keyword.get(:default, [])
+    default_processors = Keyword.get(opts || [], :processors, []) |> Keyword.get(:default, [])
 
     {
       Keyword.get(default_processors, :min_demand, @default_min_demand),
