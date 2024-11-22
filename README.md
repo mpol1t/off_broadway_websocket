@@ -116,6 +116,39 @@ end
 
 Complete list of options accepted by `http_opts` and `ws_opts` is available [here](https://ninenines.eu/docs/en/gun/2.1/manual/gun/).
 
+## Telemetry Events
+
+**OffBroadwayWebSocket** emits telemetry events for key WebSocket operations. These events can be used for monitoring and integration with tools like Prometheus, Datadog, or other observability platforms.
+
+### Event Table
+
+| **Event Name**                                  | **Measurements** | **Metadata**          | **Description**                                           |
+|-------------------------------------------------|------------------|-----------------------|-----------------------------------------------------------|
+| `[:websocket_producer, :connection, :attempt]`  | `count: 1`       | `url: String`         | Emitted when a connection attempt is made.                |
+| `[:websocket_producer, :connection, :success]`  | `count: 1`       | `url: String`         | Emitted when a connection is successfully established.     |
+| `[:websocket_producer, :connection, :failure]`  | `count: 1`       | `reason: term()`      | Emitted when a connection attempt fails.                  |
+| `[:websocket_producer, :connection, :upgraded]` | `count: 1`       | (none)                | Emitted when the WebSocket connection is upgraded.         |
+| `[:websocket_producer, :connection, :disconnected]` | `count: 1`       | `reason: term()`      | Emitted when the WebSocket connection is disconnected.     |
+| `[:websocket_producer, :connection, :timeout]`  | `count: 1`       | (none)                | Emitted when a ping/pong timeout occurs.                  |
+| `[:websocket_producer, :connection, :reconnected]` | `count: 1`       | `url: String`         | Emitted when a reconnection is successfully established.   |
+
+### Example Usage
+
+You can attach custom handlers to these telemetry events for logging or monitoring purposes. Here's an example:
+
+```elixir
+:telemetry.attach(
+  "log-connection-attempt",
+  [:websocket_producer, :connection, :attempt],
+  fn event_name, measurements, metadata, _config ->
+    IO.inspect({event_name, measurements, metadata}, label: "Telemetry Event")
+  end,
+  nil
+)
+```
+
+This allows you to customize behavior or integrate the events into observability tools.
+
 ### Running Tests
 
 To run tests:
