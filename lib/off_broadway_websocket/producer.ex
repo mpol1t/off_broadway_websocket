@@ -38,12 +38,24 @@ defmodule OffBroadwayWebSocket.Producer do
           connect_timeout: connect_timeout
         } = state
       ) do
+    :telemetry.execute([:websocket_producer, :connection, :attempt], %{count: 1}, %{
+      url: "#{url}#{path}"
+    })
+
     case Client.connect(url, path, {http_opts, ws_opts}, await_timeout, connect_timeout) do
       {:ok, conn_state} ->
+        :telemetry.execute([:websocket_producer, :connection, :success], %{count: 1}, %{
+          url: "#{url}#{path}"
+        })
+
         Logger.debug("[Producer] Connected successfully to #{url}#{path}")
         {:noreply, [], Map.merge(state, conn_state)}
 
       {:error, reason} ->
+        :telemetry.execute([:websocket_producer, :connection, :failure], %{count: 1}, %{
+          reason: reason
+        })
+
         Logger.error("[Producer] Failed to connect: #{inspect(reason)}")
         schedule_reconnect(state)
     end
@@ -54,6 +66,7 @@ defmodule OffBroadwayWebSocket.Producer do
         {:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers},
         %State{ws_timeout: t} = state
       ) do
+    :telemetry.execute([:websocket_producer, :connection, :upgraded], %{count: 1}, %{})
     Logger.debug("[Producer] WebSocket upgrade message received.")
 
     case t do
@@ -89,6 +102,11 @@ defmodule OffBroadwayWebSocket.Producer do
   @impl true
   def handle_info({:gun_down, conn_pid, _protocol, reason, _killed_streams}, state) do
     Logger.error("[Producer] Connection lost: #{inspect(reason)}. Scheduling reconnect.")
+
+    :telemetry.execute([:websocket_producer, :connection, :disconnected], %{count: 1}, %{
+      reason: reason
+    })
+
     :ok = :gun.close(conn_pid)
     schedule_reconnect(%State{state | conn_pid: nil, stream_ref: nil})
   end
@@ -112,6 +130,11 @@ defmodule OffBroadwayWebSocket.Producer do
     case Client.connect(url, path, {http_opts, ws_opts}, await_timeout, connect_timeout) do
       {:ok, conn_state} ->
         Logger.debug("[Producer] Reconnected successfully.")
+
+        :telemetry.execute([:websocket_producer, :connection, :reconnected], %{count: 1}, %{
+          url: "#{url}#{path}"
+        })
+
         {:noreply, [], Map.merge(new_state, conn_state) |> State.reset_reconnect_state()}
 
       {:error, reason} ->
@@ -142,6 +165,7 @@ defmodule OffBroadwayWebSocket.Producer do
   """
   def on_ws_timeout(%State{conn_pid: conn_pid} = state) do
     Logger.error("[Producer] Ping/Pong timeout. Scheduling reconnect.")
+    :telemetry.execute([:websocket_producer, :connection, :timeout], %{count: 1}, %{})
     :ok = :gun.close(conn_pid)
     schedule_reconnect(%State{state | conn_pid: nil, stream_ref: nil})
   end
