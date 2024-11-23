@@ -4,7 +4,7 @@ defmodule OffBroadwayWebsocket.MixProject do
   def project do
     [
       app: :off_broadway_websocket,
-      version: "0.0.3",
+      version: "0.0.4",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
