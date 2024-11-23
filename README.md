@@ -1,12 +1,11 @@
 # OffBroadwayWebSocket
 
-An Elixir library that provides a **Broadway** producer for handling WebSocket connections using the **gun** library. It supports reconnecting, ping/pong timeout monitoring, and demand-based message dispatching in an Off-Broadway setup.
+An Elixir library that provides a **Broadway** producer for handling WebSocket connections using the **gun** library. It supports ping/pong timeout monitoring, and demand-based message dispatching in an Off-Broadway setup.
 
 ## Features
 
-- Automatically manages WebSocket connections.
-- Reconnects upon disconnection, with configurable retry intervals.
-- Monitors WebSocket connections with ping/pong messages and triggers reconnects on timeout.
+- Manages WebSocket connections.
+- Monitors WebSocket connections with ping/pong messages and triggers timeouts.
 - Integrates seamlessly with **Broadway** for demand-driven message processing.
 
 ## Installation
@@ -51,8 +50,6 @@ defmodule MyApp.Broadway do
           path: "/path_to_ws_endpoint",
           reconnect_delay: 5_000,
           ws_timeout: 15_000,
-          reconnect_initial_delay: 1_000,
-          reconnect_max_delay: 60_000,
           ws_opts: %{keepalive: 10_000, silence_pings: false},
           http_opts: %{version: :"HTTP/1.1"}
         },
@@ -107,10 +104,7 @@ end
 
 - **url**: The WebSocket URL.
 - **path**: The WebSocket endpoint path.
-- **reconnect_delay**: Initial delay (in milliseconds) before attempting to reconnect after disconnection.
 - **ws_timeout**: Time in milliseconds to wait for a pong response before assuming the connection is lost.
-- **reconnect_initial_delay**: Initial delay for reconnection attempts.
-- **reconnect_max_delay**: Maximum delay between reconnection attempts.
 - **ws_opts**: WebSocket-specific options passed to the **gun 2.1** library, such as `keepalive` and `silence_pings`.
 - **http_opts**: HTTP-specific options also compatible with **gun 2.1**, including version or custom headers.
 
@@ -124,13 +118,10 @@ Complete list of options accepted by `http_opts` and `ws_opts` is available [her
 
 | **Event Name**                                  | **Measurements** | **Metadata**          | **Description**                                           |
 |-------------------------------------------------|------------------|-----------------------|-----------------------------------------------------------|
-| `[:websocket_producer, :connection, :attempt]`  | `count: 1`       | `url: String`         | Emitted when a connection attempt is made.                |
 | `[:websocket_producer, :connection, :success]`  | `count: 1`       | `url: String`         | Emitted when a connection is successfully established.     |
 | `[:websocket_producer, :connection, :failure]`  | `count: 1`       | `reason: term()`      | Emitted when a connection attempt fails.                  |
-| `[:websocket_producer, :connection, :upgraded]` | `count: 1`       | (none)                | Emitted when the WebSocket connection is upgraded.         |
 | `[:websocket_producer, :connection, :disconnected]` | `count: 1`       | `reason: term()`      | Emitted when the WebSocket connection is disconnected.     |
 | `[:websocket_producer, :connection, :timeout]`  | `count: 1`       | (none)                | Emitted when a ping/pong timeout occurs.                  |
-| `[:websocket_producer, :connection, :reconnected]` | `count: 1`       | `url: String`         | Emitted when a reconnection is successfully established.   |
 
 ### Example Usage
 
@@ -138,8 +129,8 @@ You can attach custom handlers to these telemetry events for logging or monitori
 
 ```elixir
 :telemetry.attach(
-  "log-connection-attempt",
-  [:websocket_producer, :connection, :attempt],
+  "log-connection-success",
+  [:websocket_producer, :connection, :success],
   fn event_name, measurements, metadata, _config ->
     IO.inspect({event_name, measurements, metadata}, label: "Telemetry Event")
   end,
