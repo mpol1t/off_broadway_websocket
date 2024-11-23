@@ -23,10 +23,6 @@ defmodule OffBroadwayWebSocket.Producer do
   def init(opts) do
     state = State.new(opts)
 
-    :telemetry.execute([:websocket_producer, :connection, :attempt], %{count: 1}, %{
-      url: "#{state.url}#{state.path}"
-    })
-
     case Client.connect(
            state.url,
            state.path,
@@ -35,10 +31,6 @@ defmodule OffBroadwayWebSocket.Producer do
            state.connect_timeout
          ) do
       {:ok, conn_state} ->
-        :telemetry.execute([:websocket_producer, :connection, :success], %{count: 1}, %{
-          url: "#{state.url}#{state.path}"
-        })
-
         Logger.debug("[Producer] Connected successfully to #{state.url}#{state.path}")
         {:producer, Map.merge(state, conn_state)}
 
@@ -56,7 +48,10 @@ defmodule OffBroadwayWebSocket.Producer do
         {:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers},
         %State{ws_timeout: t} = state
       ) do
-    :telemetry.execute([:websocket_producer, :connection, :upgraded], %{count: 1}, %{})
+    :telemetry.execute([:websocket_producer, :connection, :success], %{count: 1}, %{
+      url: "#{state.url}#{state.path}"
+    })
+
     Logger.debug("[Producer] WebSocket upgrade message received.")
 
     case t do
