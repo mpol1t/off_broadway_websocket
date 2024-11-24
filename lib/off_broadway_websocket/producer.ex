@@ -52,6 +52,8 @@ defmodule OffBroadwayWebSocket.Producer do
       url: "#{state.url}#{state.path}"
     })
 
+    :telemetry.execute([:websocket_producer, :connection, :status], %{value: 1}, %{})
+
     Logger.debug("[Producer] WebSocket upgrade message received.")
 
     case t do
@@ -70,7 +72,6 @@ defmodule OffBroadwayWebSocket.Producer do
     {:noreply, [], state}
   end
 
-  # Handling :gun_data
   def handle_info({:gun_data, _conn_pid, _stream_ref, _flag, _data}, state) do
     {:noreply, [], state}
   end
@@ -154,8 +155,12 @@ defmodule OffBroadwayWebSocket.Producer do
   def terminate(_reason, %{conn_pid: conn_pid}) when not is_nil(conn_pid) do
     :gun.close(conn_pid)
     Logger.debug("[Producer] Terminating and closing connection.")
+    :telemetry.execute([:websocket_producer, :connection, :status], %{value: 0}, %{})
     :ok
   end
 
-  def terminate(_reason, _state), do: :ok
+  def terminate(_reason, _state) do
+    :telemetry.execute([:websocket_producer, :connection, :status], %{value: 0}, %{})
+    :ok
+  end
 end
