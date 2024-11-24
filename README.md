@@ -115,13 +115,13 @@ Complete list of options accepted by `http_opts` and `ws_opts` is available [her
 **OffBroadwayWebSocket** emits telemetry events for key WebSocket operations. These events can be used for monitoring and integration with tools like Prometheus, Datadog, or other observability platforms.
 
 ### Event Table
-
 | **Event Name**                                  | **Measurements** | **Metadata**          | **Description**                                           |
 |-------------------------------------------------|------------------|-----------------------|-----------------------------------------------------------|
 | `[:websocket_producer, :connection, :success]`  | `count: 1`       | `url: String`         | Emitted when a connection is successfully established.     |
 | `[:websocket_producer, :connection, :failure]`  | `count: 1`       | `reason: term()`      | Emitted when a connection attempt fails.                  |
 | `[:websocket_producer, :connection, :disconnected]` | `count: 1`       | `reason: term()`      | Emitted when the WebSocket connection is disconnected.     |
 | `[:websocket_producer, :connection, :timeout]`  | `count: 1`       | (none)                | Emitted when a ping/pong timeout occurs.                  |
+| `[:websocket_producer, :connection, :status]`   | `value: [0,1]`   | (none)                | Emitted to indicate the current WebSocket connection status (`0` = down, `1` = up). |
 
 ### Example Usage
 
