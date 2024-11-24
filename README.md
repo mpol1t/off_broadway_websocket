@@ -15,7 +15,7 @@ Add `off_broadway_websocket` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, "~> 0.0.4"}
+    {:off_broadway_websocket, "~> 0.0.5"}
   ]
 end
 ```
