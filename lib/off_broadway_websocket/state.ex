@@ -26,7 +26,8 @@ defmodule OffBroadwayWebSocket.State do
     stream_ref: nil,
     last_pong: nil,
     queue_size: 0,
-    total_demand: 0
+    total_demand: 0,
+    headers: []
   ]
 
   @type t :: %__MODULE__{
@@ -44,7 +45,8 @@ defmodule OffBroadwayWebSocket.State do
           min_demand: non_neg_integer(),
           max_demand: non_neg_integer(),
           queue_size: non_neg_integer(),
-          total_demand: non_neg_integer()
+          total_demand: non_neg_integer(),
+          headers: list()
         }
 
   @doc """
@@ -59,6 +61,7 @@ defmodule OffBroadwayWebSocket.State do
       - **:ws_opts** - WebSocket options for **gun**.
       - **:http_opts** - HTTP options for **gun**.
       - **:ws_timeout** - Optional timeout for WebSocket operations.
+      - **:headers:** - Optional headers to use when upgrading to WebSocket.
 
   ## Returns
     - A **%State{}** struct initialized with the provided options and default values.
@@ -77,7 +80,8 @@ defmodule OffBroadwayWebSocket.State do
       http_opts: Keyword.get(opts, :http_opts, nil),
       ws_timeout: Keyword.get(opts, :ws_timeout, nil),
       await_timeout: Keyword.get(opts, :await_timeout, @default_await_timeout),
-      connect_timeout: Keyword.get(opts, :connect_timeout, @default_connect_timeout)
+      connect_timeout: Keyword.get(opts, :connect_timeout, @default_connect_timeout),
+      headers: Keyword.get(opts, :headers, [])
     }
   end
 

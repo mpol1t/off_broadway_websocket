@@ -26,9 +26,10 @@ defmodule OffBroadwayWebSocket.Client do
           String.t(),
           {map() | nil, map() | nil},
           non_neg_integer(),
-          non_neg_integer()
+          non_neg_integer(),
+          list()
         ) :: {:ok, map()} | {:error, term()}
-  def connect(url, path, gun_opts, await_timeout, connect_timeout) do
+  def connect(url, path, gun_opts, await_timeout, connect_timeout, headers \\ []) do
     %URI{host: host, port: _port, scheme: scheme} = URI.parse(url)
 
     host = host || url
@@ -38,7 +39,7 @@ defmodule OffBroadwayWebSocket.Client do
 
     with {:ok, conn_pid} <- :gun.open(String.to_charlist(host), port(scheme), opts),
          {:ok, _protocol} <- :gun.await_up(conn_pid, await_timeout),
-         stream_ref <- :gun.ws_upgrade(conn_pid, path) do
+         stream_ref <- :gun.ws_upgrade(conn_pid, path, headers) do
       {:ok, %{conn_pid: conn_pid, stream_ref: stream_ref}}
     else
       {:error, reason} ->
