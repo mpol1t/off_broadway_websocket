@@ -23,12 +23,15 @@ defmodule OffBroadwayWebSocket.Producer do
   def init(opts) do
     state = State.new(opts)
 
+    Logger.debug("The headers are: #{inspect(state.headers)}")
+
     case Client.connect(
            state.url,
            state.path,
            {state.http_opts, state.ws_opts},
            state.await_timeout,
-           state.connect_timeout
+           state.connect_timeout,
+           state.headers
          ) do
       {:ok, conn_state} ->
         Logger.debug("[Producer] Connected successfully to #{state.url}#{state.path}")
