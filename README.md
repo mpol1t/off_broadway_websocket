@@ -51,7 +51,12 @@ defmodule MyApp.Broadway do
           reconnect_delay: 5_000,
           ws_timeout: 15_000,
           ws_opts: %{keepalive: 10_000, silence_pings: false},
-          http_opts: %{version: :"HTTP/1.1"}
+          http_opts: %{version: :"HTTP/1.1"},
+          headers: [  # Optional headers
+            {"X-ABC-APIKEY", "api-key"},
+            {"X-ABC-PAYLOAD", %{}},
+            {"X-ABC-SIGNATURE", "signature"}
+          ],
         },
         transformer: {__MODULE__, :transform, []},
         concurrency: 1
@@ -107,6 +112,7 @@ end
 - **ws_timeout**: Time in milliseconds to wait for a pong response before assuming the connection is lost.
 - **ws_opts**: WebSocket-specific options passed to the **gun 2.1** library, such as `keepalive` and `silence_pings`.
 - **http_opts**: HTTP-specific options also compatible with **gun 2.1**, including version or custom headers.
+- **headers**: Optional headers to use when upgrading to WebSocket.
 
 Complete list of options accepted by `http_opts` and `ws_opts` is available [here](https://ninenines.eu/docs/en/gun/2.1/manual/gun/).
 
