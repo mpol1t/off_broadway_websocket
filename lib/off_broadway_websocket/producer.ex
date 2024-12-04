@@ -23,8 +23,6 @@ defmodule OffBroadwayWebSocket.Producer do
   def init(opts) do
     state = State.new(opts)
 
-    Logger.debug("The headers are: #{inspect(state.headers)}")
-
     case Client.connect(
            state.url,
            state.path,
