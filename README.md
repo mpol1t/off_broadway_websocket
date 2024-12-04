@@ -69,7 +69,7 @@ defmodule MyApp.Broadway do
 
   @impl true
   def handle_message(_processor, %Message{data: raw_message} = message, _context) do
-    case decode_message(raw_message) do
+    case Jason.decode(raw_message) do
       {:ok, %{"type" => "heartbeat"}} ->
         Logger.debug("Heartbeat message received.")
         message
@@ -82,14 +82,6 @@ defmodule MyApp.Broadway do
         Logger.error("Failed to decode message: #{inspect(error)}")
         message
     end
-  end
-
-  defp decode_message(message) when is_binary(message) do
-    Jason.decode(message)
-  end
-
-  defp decode_message(other) do
-    {:error, {:unsupported_message_format, other}}
   end
 
   def transform(event, _opts) do
