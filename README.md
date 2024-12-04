@@ -48,7 +48,6 @@ defmodule MyApp.Broadway do
           OffBroadwayWebSocket.Producer,
           url: "wss://example.com",
           path: "/path_to_ws_endpoint",
-          reconnect_delay: 5_000,
           ws_timeout: 15_000,
           ws_opts: %{keepalive: 10_000, silence_pings: false},
           http_opts: %{version: :"HTTP/1.1"},
