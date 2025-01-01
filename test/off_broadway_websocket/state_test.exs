@@ -18,6 +18,7 @@ defmodule OffBroadwayWebSocket.StateTest do
               ws_timeout <- non_negative_integer(),
               await_timeout <- non_negative_integer(),
               connect_timeout <- non_negative_integer(),
+              telemetry_id <- atom(:alphanumeric),
               max_runs: @max_runs
             ) do
         state =
@@ -36,7 +37,8 @@ defmodule OffBroadwayWebSocket.StateTest do
             http_opts: http_opts,
             ws_timeout: ws_timeout,
             await_timeout: await_timeout,
-            connect_timeout: connect_timeout
+            connect_timeout: connect_timeout,
+            telemetry_id: telemetry_id
           )
 
         assert %State{
@@ -48,7 +50,8 @@ defmodule OffBroadwayWebSocket.StateTest do
                  http_opts: ^http_opts,
                  ws_timeout: ^ws_timeout,
                  await_timeout: ^await_timeout,
-                 connect_timeout: ^connect_timeout
+                 connect_timeout: ^connect_timeout,
+                 telemetry_id: ^telemetry_id
                } = state
       end
     end
@@ -61,6 +64,7 @@ defmodule OffBroadwayWebSocket.StateTest do
       assert state.await_timeout == 10_000
       assert state.connect_timeout == 60_000
       assert state.message_queue == :queue.new()
+      assert state.telemetry_id == :websocket_producer
     end
   end
 end
