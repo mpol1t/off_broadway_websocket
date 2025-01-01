@@ -10,7 +10,7 @@ defmodule OffBroadwayWebSocket.State do
   @default_max_demand 100
   @default_await_timeout 10_000
   @default_connect_timeout 60_000
-  @default_event_producer_id :websocket_producer
+  @default_telemetry_id :websocket_producer
 
   defstruct [
     :url,
@@ -23,7 +23,7 @@ defmodule OffBroadwayWebSocket.State do
     :connect_timeout,
     :http_opts,
     :ws_opts,
-    :event_producer_id,
+    :telemetry_id,
     conn_pid: nil,
     stream_ref: nil,
     last_pong: nil,
@@ -49,7 +49,7 @@ defmodule OffBroadwayWebSocket.State do
           queue_size: non_neg_integer(),
           total_demand: non_neg_integer(),
           headers: list(),
-          event_producer_id: atom()
+          telemetry_id: atom()
         }
 
   @doc """
@@ -64,7 +64,7 @@ defmodule OffBroadwayWebSocket.State do
       - **:http_opts** - HTTP options for **gun**.
       - **:ws_timeout** - Optional timeout for WebSocket operations.
       - **:headers:** - Optional headers to use when upgrading to WebSocket.
-      - **:event_producer_id** - Optional ID to be used when emitting telemetry events. Defaults to :websocket_producer
+      - **:telemetry_id** - Optional ID to be used when emitting telemetry events. Defaults to :websocket_producer
 
   ## Returns
     - A **%State{}** struct initialized with the provided options and default values.
@@ -85,7 +85,7 @@ defmodule OffBroadwayWebSocket.State do
       await_timeout: Keyword.get(opts, :await_timeout, @default_await_timeout),
       connect_timeout: Keyword.get(opts, :connect_timeout, @default_connect_timeout),
       headers: Keyword.get(opts, :headers, []),
-      event_producer_id: Keyword.get(opts, :event_producer_id, @default_event_producer_id)
+      telemetry_id: Keyword.get(opts, :telemetry_id, @default_telemetry_id)
     }
   end
 
