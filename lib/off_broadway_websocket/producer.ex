@@ -36,7 +36,7 @@ defmodule OffBroadwayWebSocket.Producer do
         {:producer, Map.merge(state, conn_state)}
 
       {:error, reason} ->
-        :telemetry.execute([:websocket_producer, :connection, :failure], %{count: 1}, %{
+        :telemetry.execute([state.event_producer_id, :connection, :failure], %{count: 1}, %{
           reason: reason
         })
 
@@ -47,13 +47,13 @@ defmodule OffBroadwayWebSocket.Producer do
   @impl true
   def handle_info(
         {:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers},
-        %State{ws_timeout: t} = state
+        %State{ws_timeout: t, event_producer_id: event_producer_id} = state
       ) do
-    :telemetry.execute([:websocket_producer, :connection, :success], %{count: 1}, %{
+    :telemetry.execute([event_producer_id, :connection, :success], %{count: 1}, %{
       url: "#{state.url}#{state.path}"
     })
 
-    :telemetry.execute([:websocket_producer, :connection, :status], %{value: 1}, %{})
+    :telemetry.execute([event_producer_id, :connection, :status], %{value: 1}, %{})
 
     Logger.debug("[Producer] WebSocket upgrade message received.")
 
@@ -96,10 +96,13 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def handle_info({:gun_down, conn_pid, _protocol, reason, _killed_streams}, state) do
+  def handle_info(
+        {:gun_down, conn_pid, _protocol, reason, _killed_streams},
+        %State{event_producer_id: event_producer_id} = state
+      ) do
     Logger.error("[Producer] Connection lost: #{inspect(reason)}. Scheduling reconnect.")
 
-    :telemetry.execute([:websocket_producer, :connection, :disconnected], %{count: 1}, %{
+    :telemetry.execute([event_producer_id, :connection, :disconnected], %{count: 1}, %{
       reason: reason
     })
 
@@ -127,9 +130,9 @@ defmodule OffBroadwayWebSocket.Producer do
   @doc """
   Closes the connection and schedules a reconnect on WebSocket timeout.
   """
-  def on_ws_timeout(%State{conn_pid: conn_pid} = state) do
+  def on_ws_timeout(%State{conn_pid: conn_pid, event_producer_id: event_producer_id} = state) do
     Logger.error("[Producer] Ping/Pong timeout. Scheduling reconnect.")
-    :telemetry.execute([:websocket_producer, :connection, :timeout], %{count: 1}, %{})
+    :telemetry.execute([event_producer_id, :connection, :timeout], %{count: 1}, %{})
     :ok = :gun.close(conn_pid)
     {:stop, {:error, :timeout}, state}
   end
@@ -153,15 +156,16 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def terminate(_reason, %{conn_pid: conn_pid}) when not is_nil(conn_pid) do
+  def terminate(_reason, %State{conn_pid: conn_pid, event_producer_id: event_producer_id})
+      when not is_nil(conn_pid) do
     :gun.close(conn_pid)
     Logger.debug("[Producer] Terminating and closing connection.")
-    :telemetry.execute([:websocket_producer, :connection, :status], %{value: 0}, %{})
+    :telemetry.execute([event_producer_id, :connection, :status], %{value: 0}, %{})
     :ok
   end
 
-  def terminate(_reason, _state) do
-    :telemetry.execute([:websocket_producer, :connection, :status], %{value: 0}, %{})
+  def terminate(_reason, %State{event_producer_id: event_producer_id} = _state) do
+    :telemetry.execute([event_producer_id, :connection, :status], %{value: 0}, %{})
     :ok
   end
 end
