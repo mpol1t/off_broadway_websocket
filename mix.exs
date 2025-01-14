@@ -44,7 +44,7 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:stream_data, "~> 1.1", only: [:dev, :test]},
       {:excoveralls, "~> 0.18.3", only: [:test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:styler, "~> 1.2.0", only: [:dev, :test], runtime: false}
+      {:styler, "~> 1.3.1", only: [:dev, :test], runtime: false}
     ]
   end
 end
