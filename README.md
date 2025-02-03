@@ -1,3 +1,10 @@
+[![codecov](https://codecov.io/gh/mpol1t/off_broadway_websocket/graph/badge.svg?token=ZDf9PrffNJ)](https://codecov.io/gh/mpol1t/off_broadway_websocket)
+![Hex.pm Version](https://img.shields.io/hexpm/v/off_broadway_websocket)
+[![License](https://img.shields.io/github/license/mpol1t/geminex.svg)](https://github.com/mpol1t/geminex/blob/main/LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/off_broadway_websocket)
+[![Build Status](https://github.com/mpol1t/geminex/actions/workflows/elixir.yml/badge.svg)](https://github.com/mpol1t/off_broadway_websocket/actions)
+[![Elixir Version](https://img.shields.io/badge/elixir-~%3E%201.16-purple.svg)](https://elixir-lang.org/)
+
 # OffBroadwayWebSocket
 
 An Elixir library that provides a **Broadway** producer for handling WebSocket connections using the **gun** library. It supports ping/pong timeout monitoring, and demand-based message dispatching in an Off-Broadway setup.
@@ -15,7 +22,7 @@ Add `off_broadway_websocket` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, "~> 0.1.0"}
+    {:off_broadway_websocket, "~> 0.2.1"}
   ]
 end
 ```
