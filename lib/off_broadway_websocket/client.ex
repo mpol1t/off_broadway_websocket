@@ -3,6 +3,8 @@ defmodule OffBroadwayWebSocket.Client do
   Provides functions to establish and configure WebSocket connections
   using the **gun** library, with customizable timeouts and connection options.
   """
+  @behaviour OffBroadwayWebSocket.ClientBehaviour
+
   alias OffBroadwayWebSocket.Utils
 
   @doc """
@@ -53,7 +55,7 @@ defmodule OffBroadwayWebSocket.Client do
   @doc false
   @spec connect_opts(String.t(), String.t(), non_neg_integer(), {map() | nil, map() | nil}) ::
           map()
-  defp connect_opts(host, scheme, connect_timeout, {http_opts, ws_opts}) do
+  def connect_opts(host, scheme, connect_timeout, {http_opts, ws_opts}) do
     opts = %{
       connect_timeout: connect_timeout,
       retry: 0,
@@ -76,12 +78,12 @@ defmodule OffBroadwayWebSocket.Client do
 
   @doc false
   @spec transport(String.t()) :: atom()
-  defp transport("wss"), do: :tls
-  defp transport(_), do: :tcp
+  def transport("wss"), do: :tls
+  def transport(_), do: :tcp
 
   @doc false
   @spec port(String.t()) :: non_neg_integer()
-  defp port("wss"), do: 443
-  defp port("ws"), do: 80
-  defp port(_), do: 443
+  def port("wss"), do: 443
+  def port("ws"), do: 80
+  def port(_), do: 443
 end

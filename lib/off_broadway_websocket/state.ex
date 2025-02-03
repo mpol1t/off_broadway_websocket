@@ -1,6 +1,4 @@
 defmodule OffBroadwayWebSocket.State do
-  alias OffBroadwayWebSocket.Types
-
   @moduledoc """
   Manages the state for WebSocket producer in an Off-Broadway setup.
   This includes demand tracking, reconnection parameters, and message queuing.
@@ -24,6 +22,7 @@ defmodule OffBroadwayWebSocket.State do
     :http_opts,
     :ws_opts,
     :telemetry_id,
+    pid: nil,
     conn_pid: nil,
     stream_ref: nil,
     last_pong: nil,
@@ -35,9 +34,10 @@ defmodule OffBroadwayWebSocket.State do
   @type t :: %__MODULE__{
           url: String.t(),
           path: String.t(),
+          pid: pid() | nil,
           conn_pid: pid() | nil,
           stream_ref: reference() | nil,
-          message_queue: Types.queue(),
+          message_queue: :queue.queue(),
           ws_opts: map(),
           http_opts: map(),
           last_pong: DateTime.t() | nil,

@@ -9,11 +9,12 @@ defmodule OffBroadwayWebSocket.Producer do
   use GenStage
   require Logger
 
-  alias OffBroadwayWebSocket.Client
+  #  alias OffBroadwayWebSocket.Client
   alias OffBroadwayWebSocket.State
   alias OffBroadwayWebSocket.Utils
 
   @behaviour Broadway.Producer
+  @me __MODULE__
 
   def start_link(opts) do
     GenStage.start_link(__MODULE__, opts)
@@ -21,9 +22,9 @@ defmodule OffBroadwayWebSocket.Producer do
 
   @impl true
   def init(opts) do
-    state = State.new(opts)
+    state = %State{State.new(opts) | pid: @me}
 
-    case Client.connect(
+    case impl().connect(
            state.url,
            state.path,
            {state.http_opts, state.ws_opts},
@@ -32,7 +33,7 @@ defmodule OffBroadwayWebSocket.Producer do
            state.headers
          ) do
       {:ok, conn_state} ->
-        Logger.debug("[Producer] Connected successfully to #{state.url}#{state.path}")
+        Logger.debug(fn -> "[#{@me}] Connected successfully to #{state.url}#{state.path}" end)
         {:producer, Map.merge(state, conn_state)}
 
       {:error, reason} ->
@@ -40,30 +41,31 @@ defmodule OffBroadwayWebSocket.Producer do
           reason: reason
         })
 
-        Logger.error("[Producer] Failed to connect: #{inspect(reason)}")
+        Logger.error("[#{@me}] Failed to connect: #{inspect(reason)}")
+        {:stop, reason}
     end
   end
 
   @impl true
-  def handle_info(
-        {:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers},
-        %State{ws_timeout: t, telemetry_id: telemetry_id} = state
-      ) do
-    :telemetry.execute([telemetry_id, :connection, :success], %{count: 1}, %{
+  def handle_info({:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers}, state) do
+    :telemetry.execute([state.telemetry_id, :connection, :success], %{count: 1}, %{
       url: "#{state.url}#{state.path}"
     })
 
-    :telemetry.execute([telemetry_id, :connection, :status], %{value: 1}, %{})
+    :telemetry.execute([state.telemetry_id, :connection, :status], %{value: 1}, %{})
 
-    Logger.debug("[Producer] WebSocket upgrade message received.")
+    Logger.debug(fn -> "[#{@me}] WebSocket upgrade message received." end)
 
-    case t do
+    case state.ws_timeout do
       nil ->
         nil
 
       _ ->
-        Logger.debug("[Producer] First timeout check scheduled in #{t / 1_000}s")
-        Process.send_after(self(), :check_ws_timeout, t)
+        Logger.debug(fn ->
+          "[#{@me}] First timeout check scheduled in #{state.ws_timeout / 1_000}s"
+        end)
+
+        Process.send_after(state.pid, :check_ws_timeout, state.ws_timeout)
     end
 
     {:noreply, [], %State{state | conn_pid: conn_pid, stream_ref: stream_ref}}
@@ -88,84 +90,86 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def handle_info(
-        {:gun_ws, _conn_pid, _stream_ref, {_, msg}},
-        %State{message_queue: q, queue_size: s} = state
-      ) do
-    dispatch_events(%State{state | message_queue: :queue.in(msg, q), queue_size: s + 1}, 0)
+  def handle_info({:gun_ws, _conn_pid, _stream_ref, {_, msg}}, state) do
+    dispatch_events(%State{
+      state
+      | message_queue: :queue.in(msg, state.message_queue),
+        queue_size: state.queue_size + 1
+    })
   end
 
   @impl true
-  def handle_info(
-        {:gun_down, conn_pid, _protocol, reason, _killed_streams},
-        %State{telemetry_id: telemetry_id} = state
-      ) do
-    Logger.error("[Producer] Connection lost: #{inspect(reason)}. Scheduling reconnect.")
+  def handle_info({:gun_down, conn_pid, _protocol, reason, _killed_streams}, state) do
+    Logger.error("[#{@me}] Connection lost: #{inspect(reason)}")
 
-    :telemetry.execute([telemetry_id, :connection, :disconnected], %{count: 1}, %{
+    :gun.close(conn_pid)
+
+    :telemetry.execute([state.telemetry_id, :connection, :disconnected], %{count: 1}, %{
       reason: reason
     })
 
-    :ok = :gun.close(conn_pid)
     {:stop, {:error, reason}, state}
   end
 
   @impl true
-  def handle_info(:check_ws_timeout, %State{last_pong: nil} = state) do
-    on_ws_timeout(state)
-  end
+  def handle_info(:check_ws_timeout, state) do
+    trigger_timeout =
+      case state.last_pong do
+        nil -> true
+        _ -> DateTime.diff(DateTime.utc_now(), state.last_pong) > state.ws_timeout / 1_000
+      end
 
-  @impl true
-  def handle_info(:check_ws_timeout, %State{ws_timeout: ws_timeout, last_pong: t} = state) do
-    case DateTime.diff(DateTime.utc_now(), t) > ws_timeout / 1_000 do
-      true ->
-        on_ws_timeout(state)
+    if trigger_timeout do
+      Logger.error("[#{@me}] Ping/Pong timeout. Closing connection...")
 
-      false ->
-        Process.send_after(self(), :check_ws_timeout, ws_timeout)
-        {:noreply, [], state}
+      :telemetry.execute([state.telemetry_id, :connection, :timeout], %{count: 1}, %{})
+      :gun.close(state.conn_pid)
+
+      {:stop, {:error, :timeout}, state}
+    else
+      Process.send_after(state.pid, :check_ws_timeout, state.ws_timeout)
+      {:noreply, [], state}
     end
-  end
-
-  @doc """
-  Closes the connection and schedules a reconnect on WebSocket timeout.
-  """
-  def on_ws_timeout(%State{conn_pid: conn_pid, telemetry_id: telemetry_id} = state) do
-    Logger.error("[Producer] Ping/Pong timeout. Scheduling reconnect.")
-    :telemetry.execute([telemetry_id, :connection, :timeout], %{count: 1}, %{})
-    :ok = :gun.close(conn_pid)
-    {:stop, {:error, :timeout}, state}
   end
 
   @impl true
   def handle_demand(incoming_demand, state) do
-    dispatch_events(state, incoming_demand)
+    dispatch_events(%State{state | total_demand: state.total_demand + incoming_demand})
   end
 
-  @spec dispatch_events(State.t(), non_neg_integer()) :: {atom(), list(), State.t()}
-  def dispatch_events(
-        %State{message_queue: q, total_demand: d, queue_size: s, min_demand: m} = state,
-        incoming_demand
-      ) do
-    new_demand = d + incoming_demand
-
-    {c, events, rest} = Utils.on_demand(q, m, s, new_demand)
+  @spec dispatch_events(State.t()) :: {atom(), list(), State.t()}
+  def dispatch_events(state) do
+    {count, events, queue} =
+      if state.queue_size >= state.min_demand do
+        # Enough items to proceed with dispatch.
+        Utils.pop_items(state.message_queue, state.queue_size, state.total_demand)
+      else
+        # Not enough items in the message queue. Register demand.
+        {0, [], state.message_queue}
+      end
 
     {:noreply, events,
-     %State{state | total_demand: new_demand - c, message_queue: rest, queue_size: s - c}}
+     %State{
+       state
+       | total_demand: state.total_demand - count,
+         message_queue: queue,
+         queue_size: state.queue_size - count
+     }}
   end
 
   @impl true
-  def terminate(_reason, %State{conn_pid: conn_pid, telemetry_id: telemetry_id})
-      when not is_nil(conn_pid) do
-    :gun.close(conn_pid)
-    Logger.debug("[Producer] Terminating and closing connection.")
-    :telemetry.execute([telemetry_id, :connection, :status], %{value: 0}, %{})
+  def terminate(_reason, state) do
+    case state.conn_pid do
+      nil -> nil
+      _ -> :gun.close(state.conn_pid)
+    end
+
+    Logger.debug(fn -> "[#{@me}] Connection closed." end)
+    :telemetry.execute([state.telemetry_id, :connection, :status], %{value: 0}, %{})
+
     :ok
   end
 
-  def terminate(_reason, %State{telemetry_id: telemetry_id} = _state) do
-    :telemetry.execute([telemetry_id, :connection, :status], %{value: 0}, %{})
-    :ok
-  end
+  defp impl,
+    do: Application.get_env(:off_broadway_websocket, :client, OffBroadwayWebSocket.Client)
 end

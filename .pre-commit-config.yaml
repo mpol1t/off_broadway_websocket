@@ -18,7 +18,7 @@ repos:
       # Run ExUnit to ensure tests pass before committing
       - id: mix-test
         name: Run Tests
-        entry: mix test
+        entry: bash -c "MIX_ENV=test mix test"
         language: system
         pass_filenames: false
 

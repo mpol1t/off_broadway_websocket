@@ -1,71 +1,40 @@
 defmodule OffBroadwayWebSocket.Utils do
-  @moduledoc """
-  Utility module for managing a queue with demand-based operations.
-  """
-
-  alias OffBroadwayWebSocket.Types
+  @moduledoc false
 
   @doc """
-  Processes demand on the queue based on specified thresholds.
-
-  If **size** is greater than or equal to **min_demand**, the function will attempt to
-  pop up to **demand** items from the queue. If the **size** is less than **min_demand**,
-  it returns an empty response.
+  Pops items from the given queue.
 
   ## Parameters
-    - **queue**: The queue from which to pull items (of type **:queue.queue()**).
-    - **min_demand**: The minimum demand threshold (non-negative integer).
-    - **size**: The current size of the queue (non-negative integer).
-    - **demand**: The number of items requested (non-negative integer).
+
+    - **queue**: The queue to pop items from.
+    - **m**: The current number of items in the queue.
+    - **n**: The number of items requested to be removed.
+
+  ## Behavior
+
+    - If **n** is greater than **m**, all **m** items are returned and the queue is emptied.
+    - If either **m** or **n** is zero, no items are removed.
+    - Otherwise, up to **n** items are removed from the queue.
 
   ## Returns
-    - A tuple **{count, items, new_queue}** where:
-      - **count** is the number of items actually returned (non-negative integer).
-      - **items** is a list of items retrieved from the queue.
-      - **new_queue** is the updated queue after the demand is processed.
+
+  A tuple **{popped_count, items, new_queue}** where:
+    - **popped_count** is the number of items actually removed.
+    - **items** is the list of removed items.
+    - **new_queue** is the remaining queue after removal.
   """
-  @spec on_demand(
-          Types.queue(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer()
-        ) :: {non_neg_integer(), list(), Types.queue()}
-  def on_demand(queue, min_demand, size, demand) when size >= min_demand, do: pop_n(queue, demand)
-  def on_demand(queue, _min_demand, _size, _demand), do: {0, [], queue}
+  @spec pop_items(:queue.queue(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), list(), :queue.queue()}
+  def pop_items(queue, 0, _), do: {0, [], queue}
+  def pop_items(queue, _, 0), do: {0, [], queue}
+  def pop_items(queue, m, n) when n > m, do: {m, :queue.to_list(queue), :queue.new()}
 
-  @doc """
-  Retrieves up to **n** items from the queue.
+  def pop_items(queue, _, n) do
+    {front, back} = :queue.split(n, queue)
+    popped_items = :queue.to_list(front)
+    popped_count = length(popped_items)
 
-  This function attempts to pop **n** items from the given queue. If the queue has fewer
-  than **n** items, it retrieves as many as possible.
-
-  ## Parameters
-    - **queue**: The queue from which to pop items (of type **:queue.queue()**).
-    - **n**: The number of items to retrieve (non-negative integer).
-
-  ## Returns
-    - A tuple **{count, items, new_queue}** where:
-      - **count** is the actual number of items popped from the queue (non-negative integer).
-      - **items** is a list of the retrieved items.
-      - **new_queue** is the queue after items have been popped.
-  """
-  @spec pop_n(Types.queue(), non_neg_integer()) :: {non_neg_integer(), list(), Types.queue()}
-  def pop_n(queue, n) when n >= 0, do: pop_n_aux(queue, n, [], 0)
-
-  @doc false
-  @spec pop_n_aux(
-          Types.queue(),
-          non_neg_integer(),
-          list(),
-          non_neg_integer()
-        ) :: {non_neg_integer(), list(), Types.queue()}
-  defp pop_n_aux(queue, 0, acc, counter), do: {counter, Enum.reverse(acc), queue}
-
-  defp pop_n_aux(queue, n, acc, counter) do
-    case :queue.out(queue) do
-      {{:value, v}, rest} -> pop_n_aux(rest, n - 1, [v | acc], counter + 1)
-      {:empty, _rest} -> {counter, Enum.reverse(acc), :queue.new()}
-    end
+    {popped_count, popped_items, back}
   end
 
   @doc """
