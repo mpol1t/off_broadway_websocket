@@ -5,70 +5,27 @@ defmodule OffBroadwayWebSocket.UtilsTest do
   alias OffBroadwayWebSocket.Utils
 
   @max_runs 100
+  @max_items 100
 
-  describe "on_demand/4" do
-    property "pops `demand` items from the queue when demand is met" do
-      check all(
-              size <- integer(1..1000),
-              min_demand <- integer(0..(size - 1)),
-              demand <- integer(0..(size - 1)),
-              xs <- list_of(integer(), length: size),
-              max_runs: @max_runs
-            ) do
-        queue = :queue.from_list(xs)
+  describe "pop_items/2" do
+    test "pops no items when the queue is empty" do
+      queue = :queue.new()
 
-        {count, ys, remaining_queue} = Utils.on_demand(queue, min_demand, size, demand)
-
-        assert {count, ys} == {demand, Enum.take(xs, demand)}
-        assert :queue.len(remaining_queue) == size - demand
-      end
+      assert {0, [], ^queue} = Utils.pop_items(queue, 0, 5)
     end
 
-    property "returns the entire queue and clears it when demand exceeds queue size" do
+    property "pops correct number of items from the queue" do
       check all(
-              size <- integer(1..1000),
-              min_demand <- integer(0..(size - 1)),
-              xs <- list_of(integer(), length: size),
-              max_runs: @max_runs
+              n <- integer(0..@max_items),
+              items <- list_of(integer())
             ) do
-        queue = :queue.from_list(xs)
-        demand = size + 1
+        queue = :queue.from_list(items)
 
-        {count, ys, remaining_queue} = Utils.on_demand(queue, min_demand, size, demand)
+        {count, popped_items, popped_queue} = Utils.pop_items(queue, Kernel.length(items), n)
 
-        assert {count, ys} == {size, xs}
-        assert :queue.is_empty(remaining_queue)
-      end
-    end
-
-    property "returns an empty list and zero count when demand is not met" do
-      check all(
-              min_demand <- integer(1..1000),
-              size <- integer(0..(min_demand - 1)),
-              demand <- non_negative_integer(),
-              xs <- list_of(integer(), length: size),
-              max_runs: @max_runs
-            ) do
-        queue = :queue.from_list(xs)
-
-        assert Utils.on_demand(queue, min_demand, size, demand) == {0, [], queue}
-      end
-    end
-  end
-
-  describe "pop_n/2" do
-    property "retrieves and removes `n` items from the queue" do
-      check all(
-              m <- non_negative_integer(),
-              n <- integer(0..m),
-              xs <- list_of(integer(), length: m),
-              max_runs: @max_runs
-            ) do
-        queue = :queue.from_list(xs)
-        {_, ys, remaining_queue} = Utils.pop_n(queue, n)
-
-        assert ys == Enum.take(xs, n)
-        assert :queue.len(remaining_queue) == max(m - n, 0)
+        assert popped_items == Enum.take(items, n)
+        assert count == min(Kernel.length(items), n)
+        assert :queue.len(popped_queue) == :queue.len(queue) - count
       end
     end
   end

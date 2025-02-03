@@ -26,9 +26,11 @@ defmodule OffBroadwayWebsocket.MixProject do
 
   # Run "mix help compile.app" to learn about applications.
   def application do
-    [
-      extra_applications: [:logger]
-    ]
+    if Mix.env() == :prod do
+      [extra_applications: [:logger]]
+    else
+      [extra_applications: [:logger, :mox]]
+    end
   end
 
   # Run "mix help deps" to learn about dependencies.
@@ -40,6 +42,8 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:ssl_verify_fun, "~> 1.1"},
       {:broadway, "~> 1.1.0"},
       {:ex_doc, "~> 0.36.1", only: :dev, runtime: false},
+      {:meck, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:mox, "~> 1.2", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:stream_data, "~> 1.1", only: [:dev, :test]},
       {:excoveralls, "~> 0.18.3", only: [:test], runtime: false},
