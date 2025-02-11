@@ -40,7 +40,7 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:gen_stage, "~> 1.2.1"},
       {:castore, "~> 1.0"},
       {:ssl_verify_fun, "~> 1.1"},
-      {:broadway, "~> 1.1.0"},
+      {:broadway, "~> 1.2.0"},
       {:ex_doc, "~> 0.37.0", only: :dev, runtime: false},
       {:meck, "~> 1.0", only: [:dev, :test], runtime: false},
       {:mox, "~> 1.2", only: [:dev, :test], runtime: false},
