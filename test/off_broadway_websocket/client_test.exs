@@ -79,20 +79,6 @@ defmodule OffBroadwayWebSocket.ClientTest do
     end
   end
 
-  describe "port/1" do
-    test "returns port no 443 when using secure websocket" do
-      assert 443 == Client.port("wss")
-    end
-
-    test "returns port no 80 when not using secure websocket" do
-      assert 80 == Client.port("ws")
-    end
-
-    test "defaults to port no 443 when passed unrecognized protocol" do
-      assert 443 == Client.port("http")
-    end
-  end
-
   describe "connect_opts/4" do
     test "builds opts with given host, scheme, and timeout" do
       host = "example.com"
