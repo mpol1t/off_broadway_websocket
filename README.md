@@ -22,7 +22,7 @@ Add `off_broadway_websocket` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, "~> 0.2.1"}
+    {:off_broadway_websocket, "~> 0.2.2"}
   ]
 end
 ```
@@ -53,7 +53,7 @@ defmodule MyApp.Broadway do
       producer: [
         module: {
           OffBroadwayWebSocket.Producer,
-          url: "wss://example.com",
+          url: "wss://example.com:443",
           path: "/path_to_ws_endpoint",
           ws_timeout: 15_000,
           ws_opts: %{keepalive: 10_000, silence_pings: false},
