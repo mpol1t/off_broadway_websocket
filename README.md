@@ -53,7 +53,7 @@ defmodule MyApp.Broadway do
       producer: [
         module: {
           OffBroadwayWebSocket.Producer,
-          url: "wss://example.com",
+          url: "wss://example.com:443",
           path: "/path_to_ws_endpoint",
           ws_timeout: 15_000,
           ws_opts: %{keepalive: 10_000, silence_pings: false},
