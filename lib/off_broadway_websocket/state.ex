@@ -53,7 +53,7 @@ defmodule OffBroadwayWebSocket.State do
 
   @type retry_opts :: %{
           required(:retries_left) => non_neg_integer(),
-          required(:max_retries)  => non_neg_integer(),
+          required(:max_retries) => non_neg_integer(),
           required(:delay) => non_neg_integer()
         }
 

@@ -46,6 +46,7 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:mox, "~> 1.2", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:stream_data, "~> 1.1", only: [:dev, :test]},
+      {:eunomo, "~> 3.0.0", only: :dev},
       {:excoveralls, "~> 0.18.3", only: [:test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:styler, "~> 1.4.0", only: [:dev, :test], runtime: false}
