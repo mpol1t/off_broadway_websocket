@@ -7,10 +7,11 @@ defmodule OffBroadwayWebSocket.Producer do
   """
 
   use GenStage
-  require Logger
 
   alias OffBroadwayWebSocket.State
   alias OffBroadwayWebSocket.Utils
+
+  require Logger
 
   @me __MODULE__
 
@@ -24,7 +25,7 @@ defmodule OffBroadwayWebSocket.Producer do
   def init(opts) do
     send(self(), :connect)
 
-    {:producer, %State{State.new(opts) | pid: self()}}
+    {:producer, %{State.new(opts) | pid: self()}}
   end
 
   @impl true
@@ -77,7 +78,7 @@ defmodule OffBroadwayWebSocket.Producer do
 
   @impl true
   def handle_info({:gun_ws, _pid, _ref, {_, msg}}, state) do
-    updated = %State{
+    updated = %{
       state
       | message_queue: :queue.in(msg, state.message_queue),
         queue_size: state.queue_size + 1,
@@ -88,10 +89,7 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def handle_info(
-        {:gun_down, pid, _proto, reason, _streams},
-        %State{conn_pid: pid, ws_retry_opts: opts} = state
-      ) do
+  def handle_info({:gun_down, pid, _proto, reason, _streams}, %State{conn_pid: pid, ws_retry_opts: opts} = state) do
     Logger.error("[#{@me}] connection lost: #{inspect(reason)}")
     :gun.shutdown(pid)
 
@@ -106,8 +104,7 @@ defmodule OffBroadwayWebSocket.Producer do
   @impl true
   def handle_info(
         :check_timeout,
-        %State{last_msg_dt: last_msg, ws_timeout: timeout, ws_retry_opts: opts, conn_pid: pid} =
-          state
+        %State{last_msg_dt: last_msg, ws_timeout: timeout, ws_retry_opts: opts, conn_pid: pid} = state
       ) do
     stale = last_msg == nil or DateTime.diff(DateTime.utc_now(), last_msg) > timeout / 1_000
 
@@ -125,7 +122,7 @@ defmodule OffBroadwayWebSocket.Producer do
 
   @impl true
   def handle_demand(incoming, state) do
-    dispatch_events(%State{state | total_demand: state.total_demand + incoming})
+    dispatch_events(%{state | total_demand: state.total_demand + incoming})
   end
 
   @spec do_connect(State.t()) ::
@@ -142,8 +139,7 @@ defmodule OffBroadwayWebSocket.Producer do
       {:ok, conn_state} ->
         Logger.debug(fn -> "[#{@me}] connected to #{state.url}#{state.path}" end)
 
-        new_state =
-          %State{state | ws_retry_opts: state.ws_init_retry_opts} |> Map.merge(conn_state)
+        new_state = Map.merge(%{state | ws_retry_opts: state.ws_init_retry_opts}, conn_state)
 
         {:ok, new_state}
 
@@ -156,8 +152,7 @@ defmodule OffBroadwayWebSocket.Producer do
 
         updated_ws_retry_opts = state.ws_retry_fun.(state.ws_retry_opts)
 
-        {:retry, updated_ws_retry_opts.delay,
-         %State{state | ws_retry_opts: updated_ws_retry_opts}}
+        {:retry, updated_ws_retry_opts.delay, %{state | ws_retry_opts: updated_ws_retry_opts}}
     end
   end
 
@@ -167,7 +162,7 @@ defmodule OffBroadwayWebSocket.Producer do
       {count, events, queue} =
         Utils.pop_items(state.message_queue, state.queue_size, state.total_demand)
 
-      new_state = %State{
+      new_state = %{
         state
         | message_queue: queue,
           queue_size: state.queue_size - count,

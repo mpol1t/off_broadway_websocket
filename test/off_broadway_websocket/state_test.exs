@@ -88,10 +88,7 @@ defmodule OffBroadwayWebSocket.StateTest do
               ws_timeout <- non_negative_integer(),
               await_timeout <- non_negative_integer(),
               headers <-
-                list_of(
-                  {string(:ascii, min_length: 1, max_length: 5),
-                   string(:ascii, min_length: 1, max_length: 5)}
-                ),
+                list_of({string(:ascii, min_length: 1, max_length: 5), string(:ascii, min_length: 1, max_length: 5)}),
               telemetry_id <- atom(:alphanumeric),
               max_runs: @max_runs
             ) do

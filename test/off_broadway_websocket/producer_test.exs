@@ -452,7 +452,6 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
   alias OffBroadwayWebSocket.Producer
   alias OffBroadwayWebSocket.State
-  alias GenStage
 
   @test_opts [
     broadway: [processors: [default: [min_demand: 0, max_demand: 100]]],
@@ -468,8 +467,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
   describe "init/1" do
     test "successful connection" do
-      OffBroadwayWebSocket.MockClient
-      |> expect(:connect, fn _url, _path, _opts, _await, _headers ->
+      expect(OffBroadwayWebSocket.MockClient, :connect, fn _url, _path, _opts, _await, _headers ->
         {:ok, %{conn_pid: :fake, stream_ref: :ref}}
       end)
 
@@ -500,8 +498,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
         nil
       )
 
-      OffBroadwayWebSocket.MockClient
-      |> expect(:connect, fn _url, _path, _opts, _await, _headers ->
+      expect(OffBroadwayWebSocket.MockClient, :connect, fn _url, _path, _opts, _await, _headers ->
         {:error, :fail}
       end)
 
@@ -537,7 +534,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
     test "schedules timeout when ws_timeout set" do
       conn = self()
-      state = %State{State.new(@test_opts) | ws_timeout: 100, pid: self()}
+      state = %{State.new(@test_opts) | ws_timeout: 100, pid: self()}
 
       capture =
         capture_log(fn ->
@@ -558,7 +555,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
     test "does not schedule timeout when ws_timeout nil" do
       conn = self()
-      state = %State{State.new(@test_opts) | ws_timeout: nil, pid: self()}
+      state = %{State.new(@test_opts) | ws_timeout: nil, pid: self()}
 
       capture =
         capture_log(fn ->
@@ -603,7 +600,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
     test "text dispatches when demand" do
       msg = "hi"
-      state = %State{State.new(@test_opts) | total_demand: 1}
+      state = %{State.new(@test_opts) | total_demand: 1}
 
       {:noreply, [^msg], new_state} =
         Producer.handle_info({:gun_ws, nil, nil, {:text, msg}}, state)
@@ -636,7 +633,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
           {:noreply, [], new_state} =
             Producer.handle_info(
               {:gun_down, conn, :proto, :reason, []},
-              %State{State.new(@test_opts) | conn_pid: conn}
+              %{State.new(@test_opts) | conn_pid: conn}
             )
 
           assert new_state.conn_pid == nil
@@ -654,7 +651,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
   describe "handle_info(:check_timeout)" do
     test "timeout triggers reconnect" do
       conn = self()
-      state = %State{State.new(@test_opts) | conn_pid: conn, pid: conn, ws_timeout: 1}
+      state = %{State.new(@test_opts) | conn_pid: conn, pid: conn, ws_timeout: 1}
 
       pid = self()
 
@@ -687,7 +684,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
     end
 
     test "recent last_msg_dt reschedules" do
-      state = %State{
+      state = %{
         State.new(@test_opts)
         | last_msg_dt: DateTime.utc_now(),
           ws_timeout: 100,
@@ -701,7 +698,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
   describe "handle_demand/2" do
     test "dispatches available events" do
-      state = %State{
+      state = %{
         State.new(@test_opts)
         | message_queue: :queue.from_list([1, 2]),
           queue_size: 2
@@ -712,7 +709,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
     end
 
     test "queues demand when insufficient" do
-      state = %State{
+      state = %{
         State.new(@test_opts)
         | message_queue: :queue.new(),
           queue_size: 0,
@@ -746,7 +743,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
       capture =
         capture_log(fn ->
-          assert :ok = Producer.terminate(:reason, %State{State.new(@test_opts) | conn_pid: conn})
+          assert :ok = Producer.terminate(:reason, %{State.new(@test_opts) | conn_pid: conn})
         end)
 
       assert capture =~ "shutting down"
