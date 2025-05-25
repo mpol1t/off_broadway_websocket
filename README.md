@@ -1,51 +1,47 @@
 [![codecov](https://codecov.io/gh/mpol1t/off_broadway_websocket/graph/badge.svg?token=ZDf9PrffNJ)](https://codecov.io/gh/mpol1t/off_broadway_websocket)
-![Hex.pm Version](https://img.shields.io/hexpm/v/off_broadway_websocket)
-[![License](https://img.shields.io/github/license/mpol1t/geminex.svg)](https://github.com/mpol1t/geminex/blob/main/LICENSE)
+[![Hex.pm Version](https://img.shields.io/hexpm/v/off_broadway_websocket)](https://hex.pm/packages/off_broadway_websocket)
+[![License](https://img.shields.io/github/license/mpol1t/off_broadway_websocket.svg)](https://github.com/mpol1t/off_broadway_websocket/blob/main/LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/off_broadway_websocket)
-[![Build Status](https://github.com/mpol1t/geminex/actions/workflows/elixir.yml/badge.svg)](https://github.com/mpol1t/off_broadway_websocket/actions)
+[![Build Status](https://github.com/mpol1t/off_broadway_websocket/actions/workflows/elixir.yml/badge.svg)](https://github.com/mpol1t/off_broadway_websocket/actions)
 [![Elixir Version](https://img.shields.io/badge/elixir-~%3E%201.16-purple.svg)](https://elixir-lang.org/)
 
 # OffBroadwayWebSocket
 
-An Elixir library that provides a **Broadway** producer for handling WebSocket connections using the **gun** library. It supports ping/pong timeout monitoring, and demand-based message dispatching in an Off-Broadway setup.
+An Elixir library providing a **Broadway** producer for resilient WebSocket connections using **gun**.  
+Supports unified `gun_opts`, idle‐timeout detection (ping/pong & data frames), demand‐based dispatch, and custom retry strategies.
 
-## Features
-
-- Manages WebSocket connections.
-- Monitors WebSocket connections with ping/pong messages and triggers timeouts.
-- Integrates seamlessly with **Broadway** for demand-driven message processing.
+---
 
 ## Installation
 
-Add `off_broadway_websocket` to your list of dependencies in `mix.exs`:
 
+Add to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, "~> 0.2.2"}
+    {:off_broadway_websocket, "~> 1.0.0"}
   ]
 end
 ```
+Fetch & compile:
 
-Run the following to fetch and compile the dependency:
 
 ```bash
 mix deps.get
 mix deps.compile
 ```
+---
 
-## Usage
-
-### Basic Setup with **Broadway**
-
-In your project, create a **Broadway** module to use the **OffBroadwayWebSocket.Producer** as the producer.
+## Quickstart
 
 ```elixir
 defmodule MyApp.Broadway do
   use Broadway
+  
   require Logger
-
+  
   alias Broadway.Message
+  alias Broadway.NoopAcknowledger
 
   def start_link(_args) do
     Broadway.start_link(__MODULE__,
@@ -53,13 +49,57 @@ defmodule MyApp.Broadway do
       producer: [
         module: {
           OffBroadwayWebSocket.Producer,
+          # Your WebSocket endpoint:
           url: "wss://example.com:443",
-          path: "/path_to_ws_endpoint",
+          path: "/stream/updates",
+
+          # Idle timeout (ms) for no ping/data before reconnect:
           ws_timeout: 15_000,
-          ws_opts: %{keepalive: 10_000, silence_pings: false},
-          http_opts: %{version: :"HTTP/1.1"},
-          telemetry_id: :custom_telemetry_id,
-          headers: [  # Optional headers
+          # How long to wait (ms) for Gun to come up:
+          await_timeout: 8_000,
+
+          # Retry configuration – must include at least :retries_left and :delay:
+          ws_retry_opts: %{
+            max_retries:     5,
+            retries_left:    5,
+            delay:           1_000,   # initial backoff (ms)
+            max_delay:       30_000,  # cap for backoff (ms)
+            backoff_factor:  2,       # exponential factor
+            jitter_fraction: 0.1      # ±10% random jitter
+          },
+          ws_retry_fun: &MyApp.Backoff.exponential_backoff_with_jitter/1,
+
+          # Gun options (TCP/TLS, HTTP, WS):
+          gun_opts: %{
+            connect_timeout: 5_000,      # TCP/TLS handshake timeout
+            protocols:       [:http],     # application protocols
+            transport:       :tls,        # :tcp or :tls
+
+            tls_opts: [
+              verify:         :verify_peer,
+              cacertfile:     CAStore.file_path(),
+              depth:          10,
+              reuse_sessions: false,
+              verify_fun:     {
+                &:ssl_verify_hostname.verify_fun/3,
+                [check_hostname: String.to_charlist("example.com")]
+              }
+            ],
+
+            ws_opts: %{
+              keepalive:     10_000,  # send ping if silent
+              silence_pings: false
+            },
+
+            http_opts: %{
+              version:       :"HTTP/1.1"
+            }
+          },
+
+          # Prefix for telemetry events:
+          telemetry_id: :custom_telemetry,
+          # Optional headers
+          headers: [  
             {"X-ABC-APIKEY", "api-key"},
             {"X-ABC-PAYLOAD", %{}},
             {"X-ABC-SIGNATURE", "signature"}
@@ -70,67 +110,100 @@ defmodule MyApp.Broadway do
       ],
       processors: [
         default: [min_demand: 0, max_demand: 100, concurrency: 8]
-      ]
+      ],
+      context: []
     )
   end
 
   @impl true
-  def handle_message(_processor, %Message{data: raw_message} = message, _context) do
-    case Jason.decode(raw_message) do
-      {:ok, %{"type" => "heartbeat"}} ->
-        Logger.debug("Heartbeat message received.")
-        message
-
+  def handle_message(_stage, %Message{data: raw} = msg, _ctx) do
+    case Jason.decode(raw) do
       {:ok, data} ->
-        Logger.info("Data received: #{inspect(data)}")
-        message
+        Logger.debug(fn -> "Data: #{inspect(data)}" end)
+        msg
 
-      {:error, error} ->
-        Logger.error("Failed to decode message: #{inspect(error)}")
-        message
+      {:error, err} ->
+        Logger.error("Decode error: #{inspect(err)}")
+        Message.failed(msg, err)
     end
   end
 
   def transform(event, _opts) do
-    %Message{
-      data: event,
-      acknowledger: {__MODULE__, :ack_id, :ack_data}
+    %Broadway.Message{
+      data:        event,
+      acknowledger: NoopAcknowledger.init()
     }
-  end
-
-  def ack(:ack_id, _successful, _failed) do
-    :ok
   end
 end
 ```
 
-### Configuration Options
+---
 
-- **url**: The WebSocket URL.
-- **path**: The WebSocket endpoint path.
-- **ws_timeout**: Time in milliseconds to wait for a pong response before assuming the connection is lost.
-- **ws_opts**: WebSocket-specific options passed to the **gun 2.1** library, such as `keepalive` and `silence_pings`.
-- **http_opts**: HTTP-specific options also compatible with **gun 2.1**, including version or custom headers.
-- **headers**: Optional headers to use when upgrading to WebSocket.
-- **telemetry_id**: Optional custom identifier for telemetry events. Defaults to :websocket_producer.
-Complete list of options accepted by `http_opts` and `ws_opts` is available [here](https://ninenines.eu/docs/en/gun/2.1/manual/gun/).
+## Configuration Options
+
+When calling `OffBroadwayWebSocket.Producer`, you may pass:
+
+- **`:url`** (_string_, required) — WebSocket base URL.
+- **`:path`** (_string_, required) — Upgrade path and querystring.
+- **`:ws_timeout`** (_ms_, optional) — Idle timeout for no ping/data.
+- **`:await_timeout`** (_ms_, optional) — Timeout for `:gun.await_up/2`.
+- **`:headers`** (_list_, optional) — HTTP headers for WS upgrade.
+- **`:min_demand`** / **`:max_demand`** (_integer_) — Broadway backpressure.
+- **`:telemetry_id`** (_atom_) — Prefix for telemetry events.
+- **`:gun_opts`** (_map_) — All options forwarded to `:gun.open/3` and friends.
+- **`:ws_retry_opts`** (_map_) — Your initial retry state; must include:
+    - `:retries_left`, `:delay` (ms).
+    - Extra keys (e.g. `:backoff_factor`, `:jitter_fraction`) are carried through.
+- **`:ws_retry_fun`** (_function_) — A `(retry_opts() -> retry_opts())` function.
+  After each failed connect, the returned map’s `:delay` is used and stored as the next call’s input. After successful
+  reconnection, `:ws_retry_opts` are reset to initial value.
+
+---
+
+## Default Configuration
+
+Out of the box, `OffBroadwayWebSocket.Producer` uses these defaults:
+
+| Option             | Default                            | Description                                 |
+|--------------------|------------------------------------|---------------------------------------------|
+| `:url`             | **—**                              | WebSocket URL (required)                    |
+| `:path`            | **—**                              | WebSocket path (required)                   |
+| `:ws_timeout`      | `nil`                              | Idle timeout (ms) for ping/data             |
+| `:await_timeout`   | `10_000`                           | `gun.await_up/2` timeout (ms)               |
+| `:headers`         | `[]`                               | Upgrade HTTP headers                        |
+| `:min_demand`      | `10`                               | Broadway `min_demand`                       |
+| `:max_demand`      | `100`                              | Broadway `max_demand`                       |
+| `:telemetry_id`    | `:websocket_producer`              | Prefix for telemetry events                 |
+| `:gun_opts`        | `%{}`                              | Direct options to `:gun.open/3`, etc.       |
+| `:ws_retry_opts`   | see _Default `ws_retry_opts`_      | Initial retry state                         |
+| `:ws_retry_fun`    | `&OffBroadwayWebSocket.State.default_ws_retry_fun/1`    | Backoff function contract                   |
+
+### Default Backoff Function
+
+By default, a constant backoff function is used with the config shown below:
+
+```elixir
+%{
+  max_retries:  5,     # total retry attempts
+  retries_left: 5,     # decremented on each failure
+  delay:        10_000 # constant delay in ms between retries
+}
+```
+---
 
 ## Telemetry Events
 
-**OffBroadwayWebSocket** emits telemetry events for key WebSocket operations. These events can be used for monitoring and integration with tools like Prometheus, Datadog, or other observability platforms.
+Fired under `[:<telemetry_id>, :connection, <event>]`:
 
-### Event Table
-| **Event Name**                                  | **Measurements** | **Metadata**          | **Description**                                           |
-|-------------------------------------------------|------------------|-----------------------|-----------------------------------------------------------|
-| `[:websocket_producer, :connection, :success]`  | `count: 1`       | `url: String`         | Emitted when a connection is successfully established.     |
-| `[:websocket_producer, :connection, :failure]`  | `count: 1`       | `reason: term()`      | Emitted when a connection attempt fails.                  |
-| `[:websocket_producer, :connection, :disconnected]` | `count: 1`       | `reason: term()`      | Emitted when the WebSocket connection is disconnected.     |
-| `[:websocket_producer, :connection, :timeout]`  | `count: 1`       | (none)                | Emitted when a ping/pong timeout occurs.                  |
-| `[:websocket_producer, :connection, :status]`   | `value: [0,1]`   | (none)                | Emitted to indicate the current WebSocket connection status (`0` = down, `1` = up). |
+| Event           | Measurements    | Metadata          | Description                       |
+|-----------------|-----------------|-------------------|-----------------------------------|
+| `:success`      | `%{count: 1}`   | `%{url: String}`  | Handshake completed               |
+| `:failure`      | `%{count: 1}`   | `%{reason: term}` | Connect or upgrade failed         |
+| `:disconnected` | `%{count: 1}`   | `%{reason: term}` | Underlying TCP connection dropped |
+| `:timeout`      | `%{count: 1}`   | `%{}`             | Idle ping/data timeout            |
+| `:status`       | `%{value: 0|1}` | `%{}`             | `0`=down, `1`=up                  |
 
-### Example Usage
-
-You can attach custom handlers to these telemetry events for logging or monitoring purposes. Here's an example:
+Attach as usual:
 
 ```elixir
 :telemetry.attach(
@@ -143,31 +216,31 @@ You can attach custom handlers to these telemetry events for logging or monitori
 )
 ```
 
-This allows you to customize behavior or integrate the events into observability tools.
+---
 
-### Running Tests
-
-To run tests:
+## Running Tests
 
 ```bash
 mix test
 ```
 
-Ensure your WebSocket endpoint is reachable and configured properly for end-to-end tests.
+---
 
-### Running Dialyzer
-
-For static analysis with Dialyzer, make sure PLTs are built:
+## Dialyzer
 
 ```bash
 mix dialyzer --plt
 mix dialyzer
 ```
 
+---
+
 ## Contributing
 
-Feel free to open issues or submit PRs to enhance the functionality of **OffBroadwayWebSocket**. Contributions are welcome!
+PRs and issues welcome! Please follow Elixir conventions and include tests.
+
+---
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0.
+Apache License 2.0 © 2025  
