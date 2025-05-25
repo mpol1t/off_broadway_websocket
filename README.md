@@ -7,8 +7,7 @@
 
 # OffBroadwayWebSocket
 
-An Elixir library providing a **Broadway** producer for resilient WebSocket connections using **gun**.  
-Supports unified `gun_opts`, idle‐timeout detection (ping/pong & data frames), demand‐based dispatch, and custom retry strategies.
+An Elixir library providing a **Broadway** producer for resilient WebSocket connections using **gun**. Supports unified `gun_opts`, idle‐timeout detection (ping/pong & data frames), demand‐based dispatch, and custom retry strategies.
 
 ---
 
