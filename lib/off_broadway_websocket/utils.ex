@@ -36,23 +36,4 @@ defmodule OffBroadwayWebSocket.Utils do
 
     {popped_count, popped_items, back}
   end
-
-  @doc """
-  Conditionally adds a key-value pair to a map if the value is not **nil**.
-
-  If the provided value is **nil**, the function returns the original map without modification.
-  Otherwise, it adds the key-value pair to the map.
-
-  ## Parameters
-    - **opts**: The initial map to which the key-value pair may be added.
-    - **name**: The key to add to the map if **add_opts** is not **nil**.
-    - **add_opts**: The value to associate with **name**. If **nil**, **opts** is returned unmodified.
-
-  ## Returns
-    - The updated map if **add_opts** is not **nil**.
-    - The original map if **add_opts** is **nil**.
-  """
-  @spec put_with_nil(map(), any(), any() | nil) :: map()
-  def put_with_nil(opts, _name, nil), do: opts
-  def put_with_nil(opts, name, add_opts), do: Map.put(opts, name, add_opts)
 end
