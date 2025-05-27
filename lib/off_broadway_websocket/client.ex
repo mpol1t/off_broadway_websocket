@@ -33,7 +33,7 @@ defmodule OffBroadwayWebSocket.Client do
 
     host = host || url
 
-    with {:ok, conn_pid} <- :gun.open(String.to_charlist(host), port, gun_opts),
+    with {:ok, conn_pid}  <- :gun.open(String.to_charlist(host), port, gun_opts),
          {:ok, _protocol} <- :gun.await_up(conn_pid, await_timeout) do
       stream_ref = :gun.ws_upgrade(conn_pid, path, headers)
       {:ok, %{conn_pid: conn_pid, stream_ref: stream_ref}}
