@@ -18,7 +18,7 @@ Add to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, "~> 1.0.0"}
+    {:off_broadway_websocket, "~> 1.0.1"}
   ]
 end
 ```
