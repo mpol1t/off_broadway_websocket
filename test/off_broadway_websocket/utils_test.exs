@@ -16,7 +16,7 @@ defmodule OffBroadwayWebSocket.UtilsTest do
 
     property "pops correct number of items from the queue" do
       check all(
-              n <- integer(0..@max_items),
+              n     <- integer(0..@max_items),
               items <- list_of(integer()),
               max_runs: @max_runs
             ) do
@@ -24,8 +24,8 @@ defmodule OffBroadwayWebSocket.UtilsTest do
 
         {count, popped_items, popped_queue} = Utils.pop_items(queue, Kernel.length(items), n)
 
-        assert popped_items == Enum.take(items, n)
-        assert count == min(Kernel.length(items), n)
+        assert popped_items             == Enum.take(items, n)
+        assert count                    == min(Kernel.length(items), n)
         assert :queue.len(popped_queue) == :queue.len(queue) - count
       end
     end
