@@ -23,8 +23,11 @@ defmodule OffBroadwayWebSocket.Utils do
     - **items** is the list of removed items.
     - **new_queue** is the remaining queue after removal.
   """
-  @spec pop_items(:queue.queue(), non_neg_integer(), non_neg_integer()) ::
-          {non_neg_integer(), list(), :queue.queue()}
+  @spec pop_items(
+          :queue.queue(term()),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: {non_neg_integer(), [term()], :queue.queue(term())}
   def pop_items(queue, 0, _), do: {0, [], queue}
   def pop_items(queue, _, 0), do: {0, [], queue}
   def pop_items(queue, m, n) when n > m, do: {m, :queue.to_list(queue), :queue.new()}

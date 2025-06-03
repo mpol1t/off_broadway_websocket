@@ -132,7 +132,9 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @spec do_connect(State.t()) ::
-          {:ok, State.t()} | {:retry, non_neg_integer(), State.t()} | {:error, any()}
+          {:ok, State.t()}
+          | {:retry, non_neg_integer(), State.t()}
+          | {:error, :max_retries_exhausted | term()}
   defp do_connect(%State{ws_retry_opts: %{retries_left: 0}}) do
     Logger.warning("[#{@me}] retries exhausted")
     {:error, :max_retries_exhausted}
