@@ -4,7 +4,7 @@ defmodule OffBroadwayWebsocket.MixProject do
   def project do
     [
       app:             :off_broadway_websocket,
-      version:         "1.0.1",
+      version:         "1.0.2",
       elixir:          "~> 1.16",
       start_permanent: Mix.env() == :prod,
       deps:            deps(),
@@ -39,15 +39,15 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:ssl_verify_fun, "~> 1.1"},
       {:castore,        "~> 1.0"},
       {:broadway,       "~> 1.2.0"},
-      {:ex_doc,         "~> 0.38.1", only: [:dev],        runtime: false},
-      {:eunomo,         "~> 3.0.0",  only: [:dev],        runtime: false},
-      {:excoveralls,    "~> 0.18.3", only: [:test],       runtime: false},
-      {:meck,           "~> 1.0",    only: [:dev, :test], runtime: false},
-      {:mox,            "~> 1.2",    only: [:dev, :test], runtime: false},
-      {:dialyxir,       "~> 1.4",    only: [:dev, :test], runtime: false},
-      {:stream_data,    "~> 1.1",    only: [:dev, :test], runtime: false},
-      {:credo,          "~> 1.7",    only: [:dev, :test], runtime: false},
-      {:styler,         "~> 1.4.0",  only: [:dev, :test], runtime: false}
+      {:ex_doc,         "~> 0.38.1", only: [:dev],  runtime: false},
+      {:eunomo,         "~> 3.0.0",  only: [:dev],  runtime: false},
+      {:dialyxir,       "~> 1.4",    only: [:dev],  runtime: false},
+      {:credo,          "~> 1.7",    only: [:dev],  runtime: false},
+      {:styler,         "~> 1.4.0",  only: [:dev],  runtime: false},
+      {:excoveralls,    "~> 0.18.3", only: [:test], runtime: false},
+      {:meck,           "~> 1.0",    only: [:test], runtime: false},
+      {:mox,            "~> 1.2",    only: [:test], runtime: false},
+      {:stream_data,    "~> 1.1",    only: [:test], runtime: false}
     ]
   end
 end
