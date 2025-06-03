@@ -7,7 +7,7 @@ defmodule OffBroadwayWebSocket.UtilsTest do
   @max_runs 100
   @max_items 100
 
-  describe "pop_items/2" do
+  describe "pop_items/3" do
     test "pops no items when the queue is empty" do
       queue = :queue.new()
 
