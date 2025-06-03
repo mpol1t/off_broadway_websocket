@@ -22,12 +22,13 @@ defmodule OffBroadwayWebSocket.Client do
     - **{:error, reason}** if the connection or upgrade fails.
   """
   @spec connect(
-          String.t(),
-          String.t(),
-          map(),
-          non_neg_integer(),
-          list()
-        ) :: {:ok, map()} | {:error, term()}
+          url :: String.t(),
+          path :: String.t(),
+          gun_opts :: map(),
+          await_timeout :: non_neg_integer(),
+          headers :: [{String.t(), String.t()}]
+        ) ::
+        {:ok, %{conn_pid: pid(), stream_ref: reference()}} | {:error, term()}
   def connect(url, path, gun_opts, await_timeout, headers \\ []) do
     %URI{host: host, port: port, scheme: _scheme} = URI.parse(url)
 
