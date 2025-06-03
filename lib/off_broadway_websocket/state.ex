@@ -57,9 +57,10 @@ defmodule OffBroadwayWebSocket.State do
           required(:delay)        => non_neg_integer()
         }
 
-  @type retry_fun_return :: %{
-          required(:opts) => retry_opts()
-        }
+  # The function used to calculate the next retry options should accept the
+  # current options map and return the updated map. Earlier versions used a
+  # wrapped return value, but the implementation expects the options directly,
+  # so we model the type accordingly.
 
   @type t :: %__MODULE__{
           url:                String.t() | nil,
@@ -74,7 +75,7 @@ defmodule OffBroadwayWebSocket.State do
           message_queue:      :queue.queue(any()),
           ws_init_retry_opts: retry_opts() | nil,
           ws_retry_opts:      retry_opts() | nil,
-          ws_retry_fun:       (retry_opts() -> retry_fun_return()),
+          ws_retry_fun:       (retry_opts() -> retry_opts()),
           pid:                pid() | nil,
           conn_pid:           pid() | nil,
           stream_ref:         reference() | nil,
