@@ -99,5 +99,35 @@ defmodule OffBroadwayWebSocket.StateTest do
       assert result.retries_left == 0
       assert result.delay        == initial.delay
     end
+
+    property "eventually sets retries_left to zero and preserves other keys" do
+      extra_key_gen =
+        atom(:alphanumeric)
+        |> filter(&(&1 not in [:max_retries, :retries_left, :delay]))
+
+      check all(
+              max_retries  <- integer(0..10),
+              delay        <- positive_integer(),
+              retries_left <- integer(0..max_retries),
+              extra        <- map_of(extra_key_gen, integer()),
+              max_runs: @max_runs
+            ) do
+        opts =
+          %{max_retries: max_retries, retries_left: retries_left, delay: delay}
+          |> Map.merge(extra)
+
+        final_opts =
+          Enum.reduce(1..(retries_left + 1), opts, fn _, acc ->
+            State.default_ws_retry_fun(acc)
+          end)
+
+        assert final_opts.retries_left == 0
+        assert final_opts.delay == delay
+
+        for {k, v} <- extra do
+          assert Map.get(final_opts, k) == v
+        end
+      end
+    end
   end
 end
