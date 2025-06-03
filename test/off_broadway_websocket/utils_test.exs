@@ -29,5 +29,21 @@ defmodule OffBroadwayWebSocket.UtilsTest do
         assert :queue.len(popped_queue) == :queue.len(queue) - count
       end
     end
+
+    property "returns queue unchanged when n is zero" do
+      check all(
+              m     <- non_negative_integer(),
+              items <- list_of(integer()),
+              max_runs: @max_runs
+            ) do
+        queue = :queue.from_list(items)
+
+        {count, popped_items, popped_queue} = Utils.pop_items(queue, m, 0)
+
+        assert count == 0
+        assert popped_items == []
+        assert :queue.to_list(popped_queue) == items
+      end
+    end
   end
 end
