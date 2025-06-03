@@ -76,7 +76,7 @@ defmodule OffBroadwayWebSocket.StateTest do
 
       assert is_map(opts)
 
-      assert Map.keys(opts)    == [:delay, :retries_left, :max_retries]
+      assert Enum.sort(Map.keys(opts)) == [:delay, :max_retries, :retries_left]
       assert opts.max_retries  == 5
       assert opts.retries_left == 5
       assert opts.delay        == 10_000
