@@ -30,11 +30,11 @@ defmodule OffBroadwayWebSocket.Client do
         ) ::
         {:ok, %{conn_pid: pid(), stream_ref: reference()}} | {:error, term()}
   def connect(url, path, gun_opts, await_timeout, headers \\ []) do
-    %URI{host: host, port: port, scheme: _scheme} = URI.parse(url)
+    uri = URI.parse(url)
+    host = uri.host || url
+    port = uri.port || default_port(uri)
 
-    host = host || url
-
-    with {:ok, conn_pid}  <- :gun.open(String.to_charlist(host), port, gun_opts),
+    with {:ok, conn_pid}  <- :gun.open(to_charlist(host), port, gun_opts),
          {:ok, _protocol} <- :gun.await_up(conn_pid, await_timeout) do
       stream_ref = :gun.ws_upgrade(conn_pid, path, headers)
       {:ok, %{conn_pid: conn_pid, stream_ref: stream_ref}}
@@ -46,4 +46,7 @@ defmodule OffBroadwayWebSocket.Client do
         {:error, other}
     end
   end
+
+  defp default_port(%URI{scheme: scheme}) when scheme in ["wss", "https"], do: 443
+  defp default_port(_), do: 80
 end
