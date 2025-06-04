@@ -10,7 +10,7 @@ defmodule OffBroadwayWebSocket.ClientTest do
       gun_opts = %{foo: :bar}
       await_timeout = 50
       headers = [{"authorization", "token"}]
-      %URI{host: "example.com", port: expected_port} = URI.parse(url)
+      expected_port = 443
 
       :meck.new(:gun, [:non_strict])
 
@@ -87,6 +87,27 @@ defmodule OffBroadwayWebSocket.ClientTest do
       assert :meck.num_calls(:gun, :open, 1)
       assert :meck.num_calls(:gun, :await_up, 1)
 
+      :meck.unload(:gun)
+    end
+
+    test "uses default port when none provided" do
+      url = "ws://example.com"
+      path = "/v1/test-endpoint"
+      gun_opts = %{}
+      await_timeout = 50
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :open, fn host_charlist, port, opts ->
+        assert host_charlist == ~c"example.com"
+        assert port == 80
+        assert opts == gun_opts
+        {:error, :fail}
+      end)
+
+      assert {:error, :fail} = Client.connect(url, path, gun_opts, await_timeout, [])
+
+      assert :meck.num_calls(:gun, :open, 1)
       :meck.unload(:gun)
     end
   end

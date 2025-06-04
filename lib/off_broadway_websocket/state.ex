@@ -24,6 +24,8 @@ defmodule OffBroadwayWebSocket.State do
   @default_ws_max_retries     5
   @default_telemetry_id       :websocket_producer
 
+  @enforce_keys [:url, :path]
+
   defstruct [
     # user-specified
     :url,
@@ -145,9 +147,9 @@ defmodule OffBroadwayWebSocket.State do
   Default function to compute the next reconnect delay and state.
   """
   @spec default_ws_retry_fun(retry_opts()) :: retry_opts()
-  def default_ws_retry_fun(%{retries_left: 0, delay: delay} = opts), do: %{opts | retries_left: 0, delay: delay}
+  def default_ws_retry_fun(%{retries_left: 0} = opts), do: opts
 
-  def default_ws_retry_fun(%{retries_left: n, delay: delay} = opts) when n > 0 do
-    %{opts | retries_left: n - 1, delay: delay}
+  def default_ws_retry_fun(%{retries_left: n} = opts) when n > 0 do
+    %{opts | retries_left: n - 1}
   end
 end
