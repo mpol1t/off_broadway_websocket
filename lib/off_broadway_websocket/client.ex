@@ -7,15 +7,19 @@ defmodule OffBroadwayWebSocket.Client do
   @behaviour OffBroadwayWebSocket.ClientBehaviour
 
   @doc """
-  Establishes a WebSocket connection to the specified URL and path with optional **gun** options,
-  and customizable timeouts.
+  Establishes a WebSocket connection using `:gun`.
+
+  The `gun_opts` map is forwarded directly to `:gun.open/3` so TLS, HTTP and
+  WebSocket options can be configured as required. The call waits up to
+  `await_timeout` milliseconds for `:gun.await_up/2` to succeed before returning
+  an error. Additional upgrade headers may be supplied via `headers`.
 
   ## Parameters
     - **url**: The base URL for the WebSocket connection (e.g., "wss://example.com").
     - **path**: The WebSocket path to upgrade to (e.g., "/ws").
-    - **gun_opts**: A map containing :gun configuration.
-    - **await_timeout**: The timeout in milliseconds to wait for the connection to become ready.
-    - **connect_timeout**: The timeout in milliseconds for establishing the connection.
+    - **gun_opts**: Options passed to `:gun.open/3`.
+    - **await_timeout**: How long to wait for the connection to become ready.
+    - **headers**: Optional headers for the WebSocket upgrade.
 
   ## Returns
     - **{:ok, %{conn_pid: pid(), stream_ref: reference()}}** on a successful connection and upgrade.

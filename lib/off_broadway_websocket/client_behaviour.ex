@@ -1,5 +1,10 @@
 defmodule OffBroadwayWebSocket.ClientBehaviour do
-  @moduledoc false
+  @moduledoc """
+  Behaviour describing the minimal client API used by the producer.
+
+  Providing your own module that implements this behaviour allows swapping out
+  the WebSocket implementation in tests or alternative transports.
+  """
 
   @callback connect(
               url           :: String.t(),

@@ -1,9 +1,11 @@
 defmodule OffBroadwayWebSocket.Producer do
   @moduledoc """
-  A GenStage producer that manages WebSocket connections using the **gun** library.
+  A `GenStage` producer that streams data from a WebSocket connection.
 
-  This module establishes a WebSocket connection, and manages message dispatching based on demand. It monitors the
-  WebSocket connection with ping/pong messages and terminates connection when timeouts occur.
+  Under the hood it relies on the **gun** library to establish and manage the
+  connection. Incoming frames are buffered and dispatched based on the demand
+  from Broadway consumers. Idle connections are supervised with ping/pong logic
+  and automatic reconnection using a user supplied backoff strategy.
   """
 
   use GenStage
@@ -135,6 +137,13 @@ defmodule OffBroadwayWebSocket.Producer do
           {:ok, State.t()}
           | {:retry, non_neg_integer(), State.t()}
           | {:error, :max_retries_exhausted | term()}
+  @doc """
+  Attempts to establish a new WebSocket connection using the configured client.
+
+  Returns `{:ok, state}` on success, `{:retry, delay, state}` when another
+  attempt should be scheduled, or `{:error, reason}` when retries are exhausted
+  or an unrecoverable error occurs.
+  """
   defp do_connect(%State{ws_retry_opts: %{retries_left: 0}}) do
     Logger.warning("[#{@me}] retries exhausted")
     {:error, :max_retries_exhausted}
@@ -165,6 +174,13 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @spec dispatch_events(State.t()) :: {:noreply, list(any()), State.t()}
+  @doc """
+  Delivers buffered WebSocket messages when demand is available.
+
+  Events are popped from the internal queue up to the current demand and
+  returned to the Broadway pipeline. When not enough data is available, no
+  messages are emitted and state is left unchanged.
+  """
   defp dispatch_events(state) do
     if state.queue_size >= state.min_demand do
       {count, events, queue} =
