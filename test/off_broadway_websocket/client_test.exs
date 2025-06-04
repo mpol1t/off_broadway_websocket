@@ -64,6 +64,48 @@ defmodule OffBroadwayWebSocket.ClientTest do
       :meck.unload(:gun)
     end
 
+    test "uses default port 443 for https" do
+      url = "https://example.com"
+      path = "/v1/test-endpoint"
+      gun_opts = %{}
+      await_timeout = 50
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :open, fn host_charlist, port, opts ->
+        assert host_charlist == ~c"example.com"
+        assert port == 443
+        assert opts == gun_opts
+        {:error, :fail}
+      end)
+
+      assert {:error, :fail} = Client.connect(url, path, gun_opts, await_timeout, [])
+
+      assert :meck.num_calls(:gun, :open, 1)
+      :meck.unload(:gun)
+    end
+
+    test "falls back to url as host when host is missing" do
+      url = "example.com"
+      path = "/v1/test-endpoint"
+      gun_opts = %{}
+      await_timeout = 50
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :open, fn host_charlist, port, opts ->
+        assert host_charlist == ~c"example.com"
+        assert port == 80
+        assert opts == gun_opts
+        {:error, :fail}
+      end)
+
+      assert {:error, :fail} = Client.connect(url, path, gun_opts, await_timeout, [])
+
+      assert :meck.num_calls(:gun, :open, 1)
+      :meck.unload(:gun)
+    end
+
     test "fails when :gun.await_up returns an error" do
       url = "wss://example.com"
       path = "/v1/test-endpoint"
