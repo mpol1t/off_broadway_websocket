@@ -101,6 +101,7 @@ defmodule OffBroadwayWebSocket.State do
   - **:telemetry_id**, defaults to #{inspect(@default_telemetry_id)}
   - **:broadway**, to customize min_demand/max_demand
   - **:ws_retry_opts**, defaults to default_ws_retry_opts/0
+  - **:ws_retry_fun**, callback used to calculate the next retry delay
   """
   @spec new(keyword()) :: t()
   def new(opts) do
@@ -144,7 +145,10 @@ defmodule OffBroadwayWebSocket.State do
   end
 
   @doc """
-  Default function to compute the next reconnect delay and state.
+  Default function used for reconnect backoff.
+
+  It simply decrements `retries_left` while keeping the delay constant. When the
+  count reaches zero the returned map is unchanged.
   """
   @spec default_ws_retry_fun(retry_opts()) :: retry_opts()
   def default_ws_retry_fun(%{retries_left: 0} = opts), do: opts
