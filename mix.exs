@@ -35,7 +35,7 @@ defmodule OffBroadwayWebsocket.MixProject do
   defp deps do
     [
       {:gun,            "~> 2.1"},
-      {:gen_stage,      "~> 1.2.1"},
+      {:gen_stage,      "~> 1.3.0"},
       {:ssl_verify_fun, "~> 1.1"},
       {:castore,        "~> 1.0"},
       {:broadway,       "~> 1.2.0"},
