@@ -43,7 +43,7 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:eunomo,         "~> 3.0.0",  only: [:dev],  runtime: false},
       {:dialyxir,       "~> 1.4",    only: [:dev],  runtime: false},
       {:credo,          "~> 1.7",    only: [:dev],  runtime: false},
-      {:styler,         "~> 1.4.0",  only: [:dev],  runtime: false},
+      {:styler,         "~> 1.5.0",  only: [:dev],  runtime: false},
       {:excoveralls,    "~> 0.18.3", only: [:test], runtime: false},
       {:meck,           "~> 1.0",    only: [:test], runtime: false},
       {:mox,            "~> 1.2",    only: [:test], runtime: false},
