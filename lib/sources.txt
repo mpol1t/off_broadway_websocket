@@ -1,0 +1,493 @@
+### FILE: ./off_broadway_websocket/client_behaviour.ex
+defmodule OffBroadwayWebSocket.ClientBehaviour do
+  @moduledoc """
+  Behaviour describing the minimal client API used by the producer.
+
+  Providing your own module that implements this behaviour allows swapping out
+  the WebSocket implementation in tests or alternative transports.
+  """
+
+  @callback connect(
+              url           :: String.t(),
+              path          :: String.t(),
+              gun_opts      :: map(),
+              await_timeout :: non_neg_integer(),
+              headers       :: [{String.t(), String.t()}]
+            ) ::
+            {:ok, %{conn_pid: pid(), stream_ref: reference()}} | {:error, term()}
+end
+
+### FILE: ./off_broadway_websocket/utils.ex
+defmodule OffBroadwayWebSocket.Utils do
+  @moduledoc false
+
+  @doc """
+  Pops items from the given queue.
+
+  ## Parameters
+
+    - **queue**: The queue to pop items from.
+    - **m**: The current number of items in the queue.
+    - **n**: The number of items requested to be removed.
+
+  ## Behavior
+
+    - If **n** is greater than **m**, all **m** items are returned and the queue is emptied.
+    - If either **m** or **n** is zero, no items are removed.
+    - Otherwise, up to **n** items are removed from the queue.
+
+  ## Returns
+
+  A tuple **{popped_count, items, new_queue}** where:
+    - **popped_count** is the number of items actually removed.
+    - **items** is the list of removed items.
+    - **new_queue** is the remaining queue after removal.
+  """
+  @spec pop_items(
+          :queue.queue(term()),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: {non_neg_integer(), [term()], :queue.queue(term())}
+  def pop_items(queue, 0, _),            do: {0, [], queue}
+  def pop_items(queue, _, 0),            do: {0, [], queue}
+  def pop_items(queue, m, n) when n > m, do: {m, :queue.to_list(queue), :queue.new()}
+
+  def pop_items(queue, _, n) do
+    {front, back} = :queue.split(n, queue)
+    popped_items  = :queue.to_list(front)
+    popped_count  = length(popped_items)
+
+    {popped_count, popped_items, back}
+  end
+end
+
+### FILE: ./off_broadway_websocket/producer.ex
+defmodule OffBroadwayWebSocket.Producer do
+  @moduledoc """
+  A `GenStage` producer that streams data from a WebSocket connection.
+
+  Under the hood it relies on the **gun** library to establish and manage the
+  connection. Incoming frames are buffered and dispatched based on the demand
+  from Broadway consumers. Idle connections are supervised with ping/pong logic
+  and automatic reconnection using a user supplied backoff strategy.
+  """
+
+  use GenStage
+
+  alias OffBroadwayWebSocket.State
+  alias OffBroadwayWebSocket.Utils
+
+  require Logger
+
+  @me __MODULE__
+
+  @doc "Starts the WebSocket producer under a GenStage supervisor."
+  @spec start_link(keyword()) :: GenServer.on_start()
+  def start_link(opts) do
+    GenStage.start_link(__MODULE__, opts)
+  end
+
+  @impl true
+  def init(opts) do
+    send(self(), :connect)
+
+    {:producer, %{State.new(opts) | pid: self()}}
+  end
+
+  @impl true
+  def handle_info(:connect, state) do
+    case do_connect(state) do
+      {:ok, new_state} ->
+        {:noreply, [], new_state}
+
+      {:retry, delay, new_state} ->
+        Logger.debug(fn -> "[#{@me}] reconnecting in #{delay / 1_000}s" end)
+        Process.send_after(self(), :connect, delay)
+        {:noreply, [], new_state}
+
+      {:error, reason} ->
+        Logger.error("[#{@me}] giving up: #{inspect(reason)}")
+        {:stop, {:connection_failure, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_info({:gun_up, _pid, :http}, state), do: {:noreply, [], state}
+
+  @impl true
+  def handle_info({:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers}, state) do
+    Logger.debug(fn -> "[#{@me}] WebSocket upgraded" end)
+
+    :telemetry.execute([state.telemetry_id, :connection, :success], %{count: 1}, %{
+      url: state.url <> state.path
+    })
+
+    if state.ws_timeout do
+      Process.send_after(self(), :check_timeout, state.ws_timeout)
+      Logger.debug(fn -> "[#{@me}] scheduled timeout check in #{state.ws_timeout / 1_000}s" end)
+    end
+
+    {:noreply, [], %{state | conn_pid: conn_pid, stream_ref: stream_ref}}
+  end
+
+    @impl true
+  def handle_info({:gun_response, _conn_pid, _stream_ref, :nofin, status, headers}, state) when status >= 400 do
+    Logger.error("[#{@me}] WebSocket handshake failed with status #{status}, headers: #{inspect(headers)}")
+    {:stop, {:handshake_failure, {status, headers}}, state}
+  end
+
+  @impl true
+  def handle_info({:gun_ws, _conn_pid, _stream_ref, :ping}, state) do
+    Logger.debug(fn -> "[#{@me}] received ping" end)
+    {:noreply, [], state}
+  end
+
+  @impl true
+  def handle_info({:gun_ws, _pid, _ref, :pong}, state) do
+    Logger.debug(fn -> "[#{@me}] received pong" end)
+    {:noreply, [], %{state | last_msg_dt: DateTime.utc_now()}}
+  end
+
+  @impl true
+  def handle_info({:gun_ws, _pid, _ref, {_, msg}}, state) do
+    updated = %{
+      state
+      | message_queue: :queue.in(msg, state.message_queue),
+        queue_size: state.queue_size + 1,
+        last_msg_dt: DateTime.utc_now()
+    }
+
+    dispatch_events(updated)
+  end
+
+  @impl true
+  def handle_info({:gun_down, pid, _proto, reason, _streams}, %State{conn_pid: pid, ws_retry_opts: opts} = state) do
+    Logger.error("[#{@me}] connection lost: #{inspect(reason)}")
+    :gun.shutdown(pid)
+
+    :telemetry.execute([state.telemetry_id, :connection, :disconnected], %{count: 1}, %{
+      reason: reason
+    })
+
+    Process.send_after(self(), :connect, opts.delay)
+    {:noreply, [], %{state | conn_pid: nil, stream_ref: nil}}
+  end
+
+  @impl true
+  def handle_info(
+        :check_timeout,
+        %State{last_msg_dt: last_msg, ws_timeout: timeout, ws_retry_opts: opts, conn_pid: pid} = state
+      ) do
+    stale = last_msg == nil or DateTime.diff(DateTime.utc_now(), last_msg) > timeout / 1_000
+
+    if stale do
+      Logger.error("[#{@me}] timeout, closing")
+      :telemetry.execute([state.telemetry_id, :connection, :timeout], %{count: 1}, %{})
+      :gun.shutdown(pid)
+      Process.send_after(self(), :connect, opts.delay)
+      {:noreply, [], %{state | conn_pid: nil, stream_ref: nil}}
+    else
+      Process.send_after(self(), :check_timeout, timeout)
+      {:noreply, [], state}
+    end
+  end
+
+  @impl true
+  def handle_demand(incoming, state) do
+    dispatch_events(%{state | total_demand: state.total_demand + incoming})
+  end
+
+  @spec do_connect(State.t()) ::
+          {:ok, State.t()}
+          | {:retry, non_neg_integer(), State.t()}
+          | {:error, :max_retries_exhausted | term()}
+  @doc """
+  Attempts to establish a new WebSocket connection using the configured client.
+
+  Returns `{:ok, state}` on success, `{:retry, delay, state}` when another
+  attempt should be scheduled, or `{:error, reason}` when retries are exhausted
+  or an unrecoverable error occurs.
+  """
+  defp do_connect(%State{ws_retry_opts: %{retries_left: 0}}) do
+    Logger.warning("[#{@me}] retries exhausted")
+    {:error, :max_retries_exhausted}
+  end
+
+  defp do_connect(state) do
+    client = Application.get_env(:off_broadway_websocket, :client, OffBroadwayWebSocket.Client)
+
+    case client.connect(state.url, state.path, state.gun_opts, state.await_timeout, state.headers) do
+      {:ok, conn_state} ->
+        Logger.debug(fn -> "[#{@me}] connected to #{state.url}#{state.path}" end)
+
+        new_state = Map.merge(%{state | ws_retry_opts: state.ws_init_retry_opts}, conn_state)
+
+        {:ok, new_state}
+
+      {:error, reason} ->
+        Logger.error("[#{@me}] connect failed: #{inspect(reason)}")
+
+        :telemetry.execute([state.telemetry_id, :connection, :failure], %{count: 1}, %{
+          reason: reason
+        })
+
+        updated_ws_retry_opts = state.ws_retry_fun.(state.ws_retry_opts)
+
+        {:retry, updated_ws_retry_opts.delay, %{state | ws_retry_opts: updated_ws_retry_opts}}
+    end
+  end
+
+  @spec dispatch_events(State.t()) :: {:noreply, list(any()), State.t()}
+  @doc """
+  Delivers buffered WebSocket messages when demand is available.
+
+  Events are popped from the internal queue up to the current demand and
+  returned to the Broadway pipeline. When not enough data is available, no
+  messages are emitted and state is left unchanged.
+  """
+  defp dispatch_events(state) do
+    if state.queue_size >= state.min_demand do
+      {count, events, queue} =
+        Utils.pop_items(state.message_queue, state.queue_size, state.total_demand)
+
+      new_state = %{
+        state
+        | message_queue: queue,
+          queue_size: state.queue_size - count,
+          total_demand: state.total_demand - count
+      }
+
+      {:noreply, events, new_state}
+    else
+      {:noreply, [], state}
+    end
+  end
+
+  @impl true
+  def terminate(_reason, %State{conn_pid: pid} = state) do
+    if pid, do: :gun.shutdown(pid)
+    Logger.debug(fn -> "[#{@me}] shutting down" end)
+    :telemetry.execute([state.telemetry_id, :connection, :status], %{value: 0}, %{})
+    :ok
+  end
+end
+
+### FILE: ./off_broadway_websocket/state.ex
+defmodule OffBroadwayWebSocket.State do
+  @moduledoc """
+  Holds the connection and retry state for a WebSocket producer in an Off-Broadway pipeline.
+
+  ## Fields
+  - **url**, **path** – Target WebSocket endpoint.
+  - **gun_opts** – Options passed directly to Gun for HTTP/WebSocket setup.
+  - **ws_timeout** – Idle timeout for WebSocket frames.
+  - **await_timeout** – Timeout for synchronous Gun calls.
+  - **headers** – HTTP headers for the upgrade.
+  - **min_demand**, **max_demand** – Broadway demand settings.
+  - **telemetry_id** – ID used when firing telemetry events.
+  - **message_queue** – Internal buffer for frames before dispatch.
+  - **ws_init_retry_opts**, **ws_retry_opts** – Retry parameters for reconnect logic.
+  - **ws_retry_fun** – Function computing delays and next-state.
+  - **pid**, **conn_pid**, **stream_ref** – Process and stream tracking.
+  - **last_msg_dt**, **queue_size**, **total_demand** – Monitoring and backpressure.
+  """
+
+  @default_min_demand         10
+  @default_max_demand         100
+  @default_await_timeout      10_000
+  @default_ws_reconnect_delay 10_000
+  @default_ws_max_retries     5
+  @default_telemetry_id       :websocket_producer
+
+  @enforce_keys [:url, :path]
+
+  defstruct [
+    # user-specified
+    :url,
+    :path,
+    gun_opts:           %{},
+    ws_timeout:         nil,
+    await_timeout:      @default_await_timeout,
+    headers:            [],
+    min_demand:         @default_min_demand,
+    max_demand:         @default_max_demand,
+    telemetry_id:       @default_telemetry_id,
+
+    # retry logic
+    ws_init_retry_opts: nil,
+    ws_retry_opts:      nil,
+    ws_retry_fun:       nil,
+
+    # runtime state
+    pid:                nil,
+    conn_pid:           nil,
+    stream_ref:         nil,
+    message_queue:      :queue.new(),
+    last_msg_dt:        nil,
+    queue_size:         0,
+    total_demand:       0
+  ]
+
+  @type retry_opts :: %{
+          required(:retries_left) => non_neg_integer(),
+          required(:max_retries)  => non_neg_integer(),
+          required(:delay)        => non_neg_integer()
+        }
+
+  # The function used to calculate the next retry options should accept the
+  # current options map and return the updated map. Earlier versions used a
+  # wrapped return value, but the implementation expects the options directly,
+  # so we model the type accordingly.
+
+  @type t :: %__MODULE__{
+          url:                String.t() | nil,
+          path:               String.t() | nil,
+          gun_opts:           map(),
+          ws_timeout:         non_neg_integer() | nil,
+          await_timeout:      non_neg_integer(),
+          headers:            [{String.t(), String.t()}],
+          min_demand:         non_neg_integer(),
+          max_demand:         non_neg_integer(),
+          telemetry_id:       atom(),
+          message_queue:      :queue.queue(any()),
+          ws_init_retry_opts: retry_opts() | nil,
+          ws_retry_opts:      retry_opts() | nil,
+          ws_retry_fun:       (retry_opts() -> retry_opts()),
+          pid:                pid() | nil,
+          conn_pid:           pid() | nil,
+          stream_ref:         reference() | nil,
+          last_msg_dt:        DateTime.t() | nil,
+          queue_size:         non_neg_integer(),
+          total_demand:       non_neg_integer()
+        }
+
+  @doc """
+  Builds a new state struct from the given options.
+
+  Required options:
+  - **:url** – WebSocket endpoint
+  - **:path** – WebSocket path
+
+  Optional:
+  - **:gun_opts**, defaults to `%{}`
+  - **:ws_timeout**, defaults to `nil`
+  - **:await_timeout**, defaults to #{@default_await_timeout}
+  - **:headers**, defaults to `[]`
+  - **:telemetry_id**, defaults to #{inspect(@default_telemetry_id)}
+  - **:broadway**, to customize min_demand/max_demand
+  - **:ws_retry_opts**, defaults to default_ws_retry_opts/0
+  - **:ws_retry_fun**, callback used to calculate the next retry delay
+  """
+  @spec new(keyword()) :: t()
+  def new(opts) do
+    {min_demand, max_demand} = parse_demand_opts(Keyword.get(opts, :broadway, []))
+    retry_opts               = Keyword.get(opts, :ws_retry_opts, default_ws_retry_opts())
+
+    %__MODULE__{
+      min_demand:         min_demand,
+      max_demand:         max_demand,
+      ws_init_retry_opts: retry_opts,
+      ws_retry_opts:      retry_opts,
+      url:                Keyword.fetch!(opts, :url),
+      path:               Keyword.fetch!(opts, :path),
+      gun_opts:           Keyword.get(opts,    :gun_opts,      %{}),
+      ws_timeout:         Keyword.get(opts,    :ws_timeout,    nil),
+      await_timeout:      Keyword.get(opts,    :await_timeout, @default_await_timeout),
+      headers:            Keyword.get(opts,    :headers,       []),
+      telemetry_id:       Keyword.get(opts,    :telemetry_id,  @default_telemetry_id),
+      ws_retry_fun:       Keyword.get(opts,    :ws_retry_fun,  &default_ws_retry_fun/1)
+    }
+  end
+
+  @spec parse_demand_opts(keyword()) :: {non_neg_integer(), non_neg_integer()}
+  defp parse_demand_opts(broadway_opts) do
+    procs = broadway_opts |> Keyword.get(:processors, []) |> Keyword.get(:default, [])
+    min   = Keyword.get(procs, :min_demand, @default_min_demand)
+    max   = Keyword.get(procs, :max_demand, @default_max_demand)
+    {min, max}
+  end
+
+  @doc """
+  The default retry options map used for WebSocket reconnects.
+  """
+  @spec default_ws_retry_opts() :: retry_opts()
+  def default_ws_retry_opts do
+    %{
+      max_retries:  @default_ws_max_retries,
+      retries_left: @default_ws_max_retries,
+      delay:        @default_ws_reconnect_delay
+    }
+  end
+
+  @doc """
+  Default function used for reconnect backoff.
+
+  It simply decrements `retries_left` while keeping the delay constant. When the
+  count reaches zero the returned map is unchanged.
+  """
+  @spec default_ws_retry_fun(retry_opts()) :: retry_opts()
+  def default_ws_retry_fun(%{retries_left: 0} = opts), do: opts
+
+  def default_ws_retry_fun(%{retries_left: n} = opts) when n > 0 do
+    %{opts | retries_left: n - 1}
+  end
+end
+
+### FILE: ./off_broadway_websocket/client.ex
+defmodule OffBroadwayWebSocket.Client do
+  @moduledoc """
+  Provides functions to establish and configure WebSocket connections
+  using the **gun** library, with customizable timeouts and connection options.
+  """
+
+  @behaviour OffBroadwayWebSocket.ClientBehaviour
+
+  @doc """
+  Establishes a WebSocket connection using `:gun`.
+
+  The `gun_opts` map is forwarded directly to `:gun.open/3` so TLS, HTTP and
+  WebSocket options can be configured as required. The call waits up to
+  `await_timeout` milliseconds for `:gun.await_up/2` to succeed before returning
+  an error. Additional upgrade headers may be supplied via `headers`.
+
+  ## Parameters
+    - **url**: The base URL for the WebSocket connection (e.g., "wss://example.com").
+    - **path**: The WebSocket path to upgrade to (e.g., "/ws").
+    - **gun_opts**: Options passed to `:gun.open/3`.
+    - **await_timeout**: How long to wait for the connection to become ready.
+    - **headers**: Optional headers for the WebSocket upgrade.
+
+  ## Returns
+    - **{:ok, %{conn_pid: pid(), stream_ref: reference()}}** on a successful connection and upgrade.
+    - **{:error, reason}** if the connection or upgrade fails.
+  """
+  @spec connect(
+          url :: String.t(),
+          path :: String.t(),
+          gun_opts :: map(),
+          await_timeout :: non_neg_integer(),
+          headers :: [{String.t(), String.t()}]
+        ) ::
+        {:ok, %{conn_pid: pid(), stream_ref: reference()}} | {:error, term()}
+  def connect(url, path, gun_opts, await_timeout, headers \\ []) do
+    uri = URI.parse(url)
+    host = uri.host || url
+    port = uri.port || default_port(uri)
+
+    with {:ok, conn_pid}  <- :gun.open(to_charlist(host), port, gun_opts),
+         {:ok, _protocol} <- :gun.await_up(conn_pid, await_timeout) do
+      stream_ref = :gun.ws_upgrade(conn_pid, path, headers)
+      {:ok, %{conn_pid: conn_pid, stream_ref: stream_ref}}
+    else
+      {:error, reason} ->
+        {:error, reason}
+
+      other ->
+        {:error, other}
+    end
+  end
+
+  defp default_port(%URI{scheme: scheme}) when scheme in ["wss", "https"], do: 443
+  defp default_port(_), do: 80
+end
+

@@ -73,19 +73,7 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def handle_info({:gun_ws, _conn_pid, _stream_ref, :ping}, state) do
-    Logger.debug(fn -> "[#{@me}] received ping" end)
-    {:noreply, [], state}
-  end
-
-  @impl true
-  def handle_info({:gun_ws, _pid, _ref, :pong}, state) do
-    Logger.debug(fn -> "[#{@me}] received pong" end)
-    {:noreply, [], %{state | last_msg_dt: DateTime.utc_now()}}
-  end
-
-  @impl true
-  def handle_info({:gun_ws, _pid, _ref, {_, msg}}, state) do
+  def handle_info({:gun_ws, _pid, _ref, {op, msg}}, state) when op in [:text, :binary] do
     updated = %{
       state
       | message_queue: :queue.in(msg, state.message_queue),
@@ -97,16 +85,94 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
-  def handle_info({:gun_down, pid, _proto, reason, _streams}, %State{conn_pid: pid, ws_retry_opts: opts} = state) do
-    Logger.error("[#{@me}] connection lost: #{inspect(reason)}")
-    :gun.shutdown(pid)
+  def handle_info({:gun_ws, _conn_pid, _ref, :ping}, state) do
+    Logger.debug(fn -> "[#{@me}] received ping" end)
+    {:noreply, [], state}
+  end
 
-    :telemetry.execute([state.telemetry_id, :connection, :disconnected], %{count: 1}, %{
-      reason: reason
-    })
+  @impl true
+  def handle_info({:gun_ws, _conn_pid, _ref, {:ping, _payload}}, state) do
+    Logger.debug(fn -> "[#{@me}] received ping with payload" end)
+    {:noreply, [], state}
+  end
 
+  @impl true
+  def handle_info({:gun_ws, _pid, _ref, :pong}, state) do
+    Logger.debug(fn -> "[#{@me}] received pong" end)
+    {:noreply, [], %{state | last_msg_dt: DateTime.utc_now()}}
+  end
+
+  @impl true
+  def handle_info({:gun_ws, _pid, _ref, {:pong, _payload}}, state) do
+    Logger.debug(fn -> "[#{@me}] received pong with payload" end)
+    {:noreply, [], %{state | last_msg_dt: DateTime.utc_now()}}
+  end
+
+  @impl true
+  def handle_info({:gun_ws, conn_pid, _ref, :close}, %State{ws_retry_opts: opts} = state) do
+    Logger.error("[#{@me}] websocket closed by peer")
+    :telemetry.execute([state.telemetry_id, :connection, :disconnected], %{count: 1}, %{reason: :ws_close})
+    :gun.shutdown(conn_pid)
     Process.send_after(self(), :connect, opts.delay)
     {:noreply, [], %{state | conn_pid: nil, stream_ref: nil}}
+  end
+
+  @impl true
+  def handle_info({:gun_ws, conn_pid, _ref, {:close, payload}}, %State{ws_retry_opts: opts} = state) do
+    Logger.error("[#{@me}] websocket closed: #{inspect(payload)}")
+    :telemetry.execute([state.telemetry_id, :connection, :disconnected], %{count: 1}, %{reason: {:ws_close, payload}})
+    :gun.shutdown(conn_pid)
+    Process.send_after(self(), :connect, opts.delay)
+    {:noreply, [], %{state | conn_pid: nil, stream_ref: nil}}
+  end
+
+  @impl true
+  def handle_info({:gun_ws, conn_pid, _ref, {:close, code, reason}}, %State{ws_retry_opts: opts} = state) do
+    Logger.error("[#{@me}] websocket closed: code=#{code} reason=#{inspect(reason)}")
+    :telemetry.execute([state.telemetry_id, :connection, :disconnected], %{count: 1}, %{reason: {:ws_close, code, reason}})
+    :gun.shutdown(conn_pid)
+    Process.send_after(self(), :connect, opts.delay)
+    {:noreply, [], %{state | conn_pid: nil, stream_ref: nil}}
+  end
+
+  @impl true
+  def handle_info({:gun_error, _conn_pid, _stream_ref, reason}, state) do
+    Logger.error("[#{@me}] gun stream error: #{inspect(reason)}")
+    :telemetry.execute([state.telemetry_id, :connection, :failure], %{count: 1}, %{reason: reason})
+    {:noreply, [], state}
+  end
+
+  # Connection-wide error (not necessarily fatal)
+  @impl true
+  def handle_info({:gun_error, _conn_pid, reason}, state) do
+    Logger.error("[#{@me}] gun connection error: #{inspect(reason)}")
+    :telemetry.execute([state.telemetry_id, :connection, :failure], %{count: 1}, %{reason: reason})
+    {:noreply, [], state}
+  end
+
+  @impl true
+  def handle_info({:gun_down, conn_pid, _proto, reason, streams}, state) when is_list(streams) do
+    handle_gun_down(conn_pid, reason, state)
+  end
+
+  @impl true
+  def handle_info({:gun_down, conn_pid, _proto, reason, _killed, _unprocessed}, state) do
+    handle_gun_down(conn_pid, reason, state)
+  end
+
+  defp handle_gun_down(conn_pid, reason, %State{ws_retry_opts: opts} = state) do
+    case state.conn_pid do
+      ^conn_pid ->
+        require Logger
+        Logger.error("[#{@me}] connection lost: #{inspect(reason)}")
+        :telemetry.execute([state.telemetry_id, :connection, :disconnected], %{count: 1}, %{reason: reason})
+        Process.send_after(self(), :connect, opts.delay)
+        {:noreply, [], %{state | conn_pid: nil, stream_ref: nil}}
+
+      _other ->
+        Logger.debug(fn -> "[#{@me}] ignoring late gun_down for stale conn #{inspect(conn_pid)} (reason=#{inspect(reason)})" end)
+        {:noreply, [], state}
+    end
   end
 
   @impl true
