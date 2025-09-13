@@ -34,20 +34,20 @@ defmodule OffBroadwayWebsocket.MixProject do
 
   defp deps do
     [
-      {:gun,            "~> 2.1"},
+      {:gun,            "~> 2.2"},
       {:gen_stage,      "~> 1.3.0"},
       {:ssl_verify_fun, "~> 1.1"},
       {:castore,        "~> 1.0"},
       {:broadway,       "~> 1.2.0"},
-      {:ex_doc,         "~> 0.38.1", only: [:dev],  runtime: false},
-      {:eunomo,         "~> 3.0.0",  only: [:dev],  runtime: false},
-      {:dialyxir,       "~> 1.4",    only: [:dev],  runtime: false},
-      {:credo,          "~> 1.7",    only: [:dev],  runtime: false},
-      {:styler,         "~> 1.8.0",  only: [:dev],  runtime: false},
-      {:excoveralls,    "~> 0.18.3", only: [:test], runtime: false},
+      {:ex_doc,         "~> 0.38.4", only: [:dev], runtime: false},
+      {:eunomo,         "~> 3.0.0",  only: [:dev], runtime: false},
+      {:dialyxir,       "~> 1.4.6",  only: [:dev], runtime: false},
+      {:credo,          "~> 1.7.12", only: [:dev], runtime: false},
+      {:styler,         "~> 1.8.0",  only: [:dev], runtime: false},
+      {:excoveralls,    "~> 0.18.5", only: [:test], runtime: false},
       {:meck,           "~> 1.0",    only: [:test], runtime: false},
-      {:mox,            "~> 1.2",    only: [:test], runtime: false},
-      {:stream_data,    "~> 1.1",    only: [:test], runtime: false}
+      {:mox,            "~> 1.2.0",  only: [:test], runtime: false},
+      {:stream_data,    "~> 1.2.0",  only: [:test], runtime: false}
     ]
   end
 end
