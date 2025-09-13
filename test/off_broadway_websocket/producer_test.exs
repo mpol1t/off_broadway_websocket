@@ -182,7 +182,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
   end
 
   describe "handle_info(:gun_down)" do
-    test "shutdown and telemetry" do
+    test "logs and emits telemetry, schedules reconnect (no shutdown called here)" do
       conn = self()
       pid = self()
 
@@ -193,29 +193,22 @@ defmodule OffBroadwayWebSocket.ProducerTest do
         nil
       )
 
-      :meck.new(:gun, [:non_strict])
-
-      :meck.expect(:gun, :shutdown, fn ^conn ->
-        send(pid, :down)
-        :ok
-      end)
+      # No meck here — producer doesn't call :gun.shutdown on :gun_down
+      state = %{State.new(@test_opts) | conn_pid: conn, ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}}
 
       capture =
         capture_log(fn ->
           {:noreply, [], new_state} =
-            Producer.handle_info(
-              {:gun_down, conn, :proto, :reason, []},
-              %{State.new(@test_opts) | conn_pid: conn}
-            )
+            Producer.handle_info({:gun_down, conn, :proto, :reason, []}, state)
 
           assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
         end)
 
-      assert capture =~ "connection lost"
-      assert_receive :down, 500
-      assert_receive {:disc, %{count: 1}, %{reason: :reason}}, 500
+      assert capture =~ "connection lost: :reason"
+      assert_receive {:disc, %{count: 1}, %{reason: :reason}}, 200
+      assert_receive :connect, 200
 
-      :meck.unload(:gun)
       :telemetry.detach(:disc)
     end
   end
@@ -349,6 +342,188 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
       :meck.unload(:gun)
       :telemetry.detach(:stat2)
+    end
+  end
+
+  describe "handle_info for ws frames (new clauses)" do
+    test ":pong with payload updates last_msg_dt" do
+      {:noreply, [], state} =
+        Producer.handle_info({:gun_ws, nil, nil, {:pong, "x"}}, State.new(@test_opts))
+
+      assert state.last_msg_dt != nil
+    end
+
+    test ":ping with payload leaves state unchanged" do
+      state = State.new(@test_opts)
+      {:noreply, [], new_state} = Producer.handle_info({:gun_ws, nil, nil, {:ping, "x"}}, state)
+      assert new_state == state
+    end
+
+    test "binary enqueues/dispatches explicitly" do
+      bin = <<0, 1, 2>>
+
+      # no demand → buffers
+      {:noreply, [], st1} =
+        Producer.handle_info({:gun_ws, nil, nil, {:binary, bin}}, State.new(@test_opts))
+
+      assert st1.queue_size == 1
+
+      # demand → dispatch
+      st2 = %{State.new(@test_opts) | total_demand: 1}
+      {:noreply, [^bin], st3} =
+        Producer.handle_info({:gun_ws, nil, nil, {:binary, bin}}, st2)
+
+      assert st3.queue_size == 0
+    end
+  end
+
+  describe "handle_info(:gun_ws ... close*)" do
+    setup do
+      pid = self()
+
+      :telemetry.attach(
+        :disc_close,
+        [:dummy_telemetry, :connection, :disconnected],
+        fn _e, ms, md, _ -> send(pid, {:disc, ms, md}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(:disc_close) end)
+      :ok
+    end
+
+    test ":close without payload clears conn and reconnects" do
+      conn = self()
+      state = %{State.new(@test_opts) | conn_pid: conn, ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}}
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info({:gun_ws, conn, :ref, :close}, state)
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+        end)
+
+      assert capture =~ "websocket closed by peer"
+      assert_receive {:disc, %{count: 1}, %{reason: :ws_close}}, 200
+      assert_receive :connect, 200
+    end
+
+    test "{:close, payload} clears conn and reconnects" do
+      conn = self()
+      state = %{State.new(@test_opts) | conn_pid: conn, ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}}
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info({:gun_ws, conn, :ref, {:close, "bye"}}, state)
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+        end)
+
+      assert capture =~ ~s|websocket closed: "bye"|
+      assert_receive {:disc, %{count: 1}, %{reason: {:ws_close, "bye"}}}, 200
+      assert_receive :connect, 200
+    end
+
+    test "{:close, code, reason} clears conn and reconnects" do
+      conn = self()
+      state = %{State.new(@test_opts) | conn_pid: conn, ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}}
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info({:gun_ws, conn, :ref, {:close, 4003, "connection unused"}}, state)
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+        end)
+
+      assert capture =~ ~s|websocket closed: code=4003 reason="connection unused"|
+      assert_receive {:disc, %{count: 1}, %{reason: {:ws_close, 4003, "connection unused"}}}, 200
+      assert_receive :connect, 200
+    end
+  end
+
+  describe "handle_info(:gun_error ...)" do
+    setup do
+      pid = self()
+
+      :telemetry.attach(
+        :fail_ws,
+        [:dummy_telemetry, :connection, :failure],
+        fn _e, ms, md, _ -> send(pid, {:failure, ms, md}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(:fail_ws) end)
+      :ok
+    end
+
+    test "stream-level gun_error emits telemetry" do
+      state = State.new(@test_opts)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], ^state} =
+            Producer.handle_info({:gun_error, :conn, :ref, :econnreset}, state)
+        end)
+
+      assert capture =~ "gun stream error: :econnreset"
+      assert_receive {:failure, %{count: 1}, %{reason: :econnreset}}, 200
+    end
+
+    test "connection-level gun_error emits telemetry" do
+      state = State.new(@test_opts)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], ^state} =
+            Producer.handle_info({:gun_error, :conn, :etimedout}, state)
+        end)
+
+      assert capture =~ "gun connection error: :etimedout"
+      assert_receive {:failure, %{count: 1}, %{reason: :etimedout}}, 200
+    end
+  end
+
+  describe "handle_info(:gun_down) (new variants)" do
+    test "6-tuple gun_down handled like 5-tuple" do
+      conn = self()
+      state = %{State.new(@test_opts) | conn_pid: conn, ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}}
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info({:gun_down, conn, :ws, :normal, [], []}, state)
+
+          assert new_state.conn_pid == nil
+        end)
+
+      assert capture =~ "connection lost: :normal"
+      assert_receive :connect, 200
+    end
+
+    test "late gun_down for stale conn is ignored" do
+      # state.conn_pid ≠ incoming conn; ensure we don't shutdown or schedule
+      stale_conn = make_ref()
+      state = %{State.new(@test_opts) | conn_pid: self()}
+
+      :meck.new(:gun, [:non_strict])
+      :meck.expect(:gun, :shutdown, fn _ -> flunk("shutdown should not be called for stale gun_down") end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], ^state} =
+            Producer.handle_info({:gun_down, stale_conn, :ws, :normal, []}, state)
+        end)
+
+      assert capture =~ "ignoring late gun_down for stale conn"
+      refute_receive :connect, 100
+
+      :meck.unload(:gun)
     end
   end
 end
