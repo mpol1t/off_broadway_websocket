@@ -405,8 +405,8 @@ defmodule OffBroadwayWebSocket.ProducerTest do
           assert new_state.stream_ref == nil
         end)
 
-      assert capture =~ "websocket closed by peer"
-      assert_receive {:disc, %{count: 1}, %{reason: :ws_close}}, 200
+      assert capture =~ "websocket closed"
+      assert_receive {:disc, %{count: 1}, %{reason: {:ws_close, nil}}}, 200
       assert_receive :connect, 200
     end
 
@@ -442,7 +442,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
         end)
 
       assert capture =~ ~s|websocket closed: code=4003 reason="connection unused"|
-      assert_receive {:disc, %{count: 1}, %{reason: {:ws_close, 4003, "connection unused"}}}, 200
+      assert_receive {:disc, %{count: 1}, %{reason: {:ws_close, {4003, "connection unused"}}}}, 200
       assert_receive :connect, 200
     end
   end
@@ -471,7 +471,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
             Producer.handle_info({:gun_error, :conn, :ref, :econnreset}, state)
         end)
 
-      assert capture =~ "gun stream error: :econnreset"
+      assert capture =~ "gun connection error: :econnreset"
       assert_receive {:failure, %{count: 1}, %{reason: :econnreset}}, 200
     end
 
