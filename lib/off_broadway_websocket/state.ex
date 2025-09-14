@@ -166,5 +166,5 @@ defmodule OffBroadwayWebSocket.State do
     }
   end
 
-  def update_last_msg_dt(state), do: %__MODULE__{ state | last_msg_dt: DateTime.utc_now()}
+  def update_last_msg_dt(state), do: %__MODULE__{state | last_msg_dt: DateTime.utc_now()}
 end

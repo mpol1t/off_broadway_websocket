@@ -56,7 +56,7 @@ defmodule OffBroadwayWebSocket.Producer do
       Logger.debug(fn -> "[#{@me}] scheduled timeout check in #{state.ws_timeout / 1_000}s" end)
     end
 
-    {:noreply, [], %State{ state | conn_pid: conn_pid, stream_ref: stream_ref, last_msg_dt: DateTime.utc_now()}}
+    {:noreply, [], %State{state | conn_pid: conn_pid, stream_ref: stream_ref, last_msg_dt: DateTime.utc_now()}}
   end
 
   @impl true
@@ -155,7 +155,7 @@ defmodule OffBroadwayWebSocket.Producer do
   """
   defp dispatch_events(%State{total_demand: d, queue_size: q} = state) when d > 0 and q > 0 do
     {count, events, queue} = Utils.pop_items(state.message_queue, q, d)
-    new_state = %State{ state | message_queue: queue, queue_size: q - count, total_demand: d - count}
+    new_state = %State{state | message_queue: queue, queue_size: q - count, total_demand: d - count}
     {:noreply, events, new_state}
   end
 
