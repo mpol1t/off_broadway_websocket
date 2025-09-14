@@ -156,4 +156,15 @@ defmodule OffBroadwayWebSocket.State do
   def default_ws_retry_fun(%{retries_left: n} = opts) when n > 0 do
     %{opts | retries_left: n - 1}
   end
+
+  def update_on_msg(state, msg) do
+    %__MODULE__{
+      state
+      | message_queue: :queue.in(msg, state.message_queue),
+        queue_size:    state.queue_size + 1,
+        last_msg_dt:   DateTime.utc_now()
+    }
+  end
+
+  def update_last_msg_dt(state), do: %__MODULE__{ state | last_msg_dt: DateTime.utc_now()}
 end
