@@ -153,24 +153,6 @@ defmodule OffBroadwayWebSocket.Producer do
   returned to the Broadway pipeline. When not enough data is available, no
   messages are emitted and state is left unchanged.
   """
-  # defp dispatch_events(state) do
-  #   if state.queue_size >= state.min_demand do
-  #     {count, events, queue} =
-  #       Utils.pop_items(state.message_queue, state.queue_size, state.total_demand)
-
-  #     new_state = %{
-  #       state
-  #       | message_queue: queue,
-  #         queue_size:    state.queue_size   - count,
-  #         total_demand:  state.total_demand - count
-  #     }
-
-  #     {:noreply, events, new_state}
-  #   else
-  #     {:noreply, [], state}
-  #   end
-  # end
-
   defp dispatch_events(%State{total_demand: d, queue_size: q} = state) when d > 0 and q > 0 do
     {count, events, queue} = Utils.pop_items(state.message_queue, q, d)
     new_state = %State{ state | message_queue: queue, queue_size: q - count, total_demand: d - count}
