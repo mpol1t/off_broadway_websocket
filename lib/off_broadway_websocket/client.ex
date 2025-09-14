@@ -6,6 +6,8 @@ defmodule OffBroadwayWebSocket.Client do
 
   @behaviour OffBroadwayWebSocket.ClientBehaviour
 
+  alias OffBroadwayWebSocket.State
+
   @doc """
   Establishes a WebSocket connection using `:gun`.
 
@@ -34,7 +36,7 @@ defmodule OffBroadwayWebSocket.Client do
         ) ::
         {:ok, %{conn_pid: pid(), stream_ref: reference()}} | {:error, term()}
   def connect(url, path, gun_opts, await_timeout, headers \\ []) do
-    uri = URI.parse(url)
+    uri  = URI.parse(url)
     host = uri.host || url
     port = uri.port || default_port(uri)
 
@@ -43,14 +45,23 @@ defmodule OffBroadwayWebSocket.Client do
       stream_ref = :gun.ws_upgrade(conn_pid, path, headers)
       {:ok, %{conn_pid: conn_pid, stream_ref: stream_ref}}
     else
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, other}
+      {:error, reason} -> {:error, reason}
+      other            -> {:error, other}
     end
   end
 
   defp default_port(%URI{scheme: scheme}) when scheme in ["wss", "https"], do: 443
-  defp default_port(_), do: 80
+  defp default_port(_),                                                    do: 80
+
+  @spec connect_once(State.t()) :: {:ok, map()} | {:error, term()}
+  def connect_once(state) do
+    client =
+      Application.get_env(
+        :off_broadway_websocket,
+        :client,
+        OffBroadwayWebSocket.Client
+      )
+
+    client.connect(state.url, state.path, state.gun_opts, state.await_timeout, state.headers)
+  end
 end
