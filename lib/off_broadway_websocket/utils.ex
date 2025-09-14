@@ -28,14 +28,14 @@ defmodule OffBroadwayWebSocket.Utils do
           non_neg_integer(),
           non_neg_integer()
         ) :: {non_neg_integer(), [term()], :queue.queue(term())}
-  def pop_items(queue, 0, _), do: {0, [], queue}
-  def pop_items(queue, _, 0), do: {0, [], queue}
+  def pop_items(queue, 0, _),            do: {0, [], queue}
+  def pop_items(queue, _, 0),            do: {0, [], queue}
   def pop_items(queue, m, n) when n > m, do: {m, :queue.to_list(queue), :queue.new()}
 
   def pop_items(queue, _, n) do
     {front, back} = :queue.split(n, queue)
-    popped_items = :queue.to_list(front)
-    popped_count = length(popped_items)
+    popped_items  = :queue.to_list(front)
+    popped_count  = length(popped_items)
 
     {popped_count, popped_items, back}
   end
