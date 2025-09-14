@@ -1,6 +1,5 @@
 defmodule OffBroadwayWebSocket.Telemetry do
   @moduledoc false
-  # Small helpers in case you want to evolve metadata later.
 
   def ok(state, meta \\ %{}) do
     :telemetry.execute([state.telemetry_id, :connection, :success], %{count: 1}, meta)

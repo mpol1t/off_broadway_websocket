@@ -1,7 +1,5 @@
 defmodule OffBroadwayWebSocket.Handlers do
   @moduledoc false
-  # Normalizes gun websocket frames to a small internal set
-  # WITHOUT changing behavior.
 
   @type ws_msg :: {:data, binary()} | :ping | :pong | {:close, nil | term() | {non_neg_integer(), term()}}
 
