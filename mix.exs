@@ -34,7 +34,7 @@ defmodule OffBroadwayWebsocket.MixProject do
 
   defp deps do
     [
-      {:gun,            "~> 2.1"},
+      {:gun,            "~> 2.2"},
       {:gen_stage,      "~> 1.3.0"},
       {:ssl_verify_fun, "~> 1.1"},
       {:castore,        "~> 1.0"},
@@ -46,8 +46,8 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:styler,         "~> 1.10.0",  only: [:dev],  runtime: false},
       {:excoveralls,    "~> 0.18.3", only: [:test], runtime: false},
       {:meck,           "~> 1.0",    only: [:test], runtime: false},
-      {:mox,            "~> 1.2",    only: [:test], runtime: false},
-      {:stream_data,    "~> 1.1",    only: [:test], runtime: false}
+      {:mox,            "~> 1.2.0",  only: [:test], runtime: false},
+      {:stream_data,    "~> 1.2.0",  only: [:test], runtime: false}
     ]
   end
 end
