@@ -39,7 +39,7 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:ssl_verify_fun, "~> 1.1"},
       {:castore,        "~> 1.0"},
       {:broadway,       "~> 1.2.0"},
-      {:ex_doc,         "~> 0.39.1", only: [:dev],  runtime: false},
+      {:ex_doc,         "~> 0.40.0", only: [:dev],  runtime: false},
       {:eunomo,         "~> 3.0.0",  only: [:dev],  runtime: false},
       {:dialyxir,       "~> 1.4",    only: [:dev],  runtime: false},
       {:credo,          "~> 1.7",    only: [:dev],  runtime: false},
