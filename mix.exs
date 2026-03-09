@@ -47,7 +47,7 @@ defmodule OffBroadwayWebsocket.MixProject do
       {:excoveralls,    "~> 0.18.3", only: [:test], runtime: false},
       {:meck,           "~> 1.0",    only: [:test], runtime: false},
       {:mox,            "~> 1.2.0",  only: [:test], runtime: false},
-      {:stream_data,    "~> 1.2.0",  only: [:test], runtime: false}
+      {:stream_data,    "~> 1.3.0",  only: [:test], runtime: false}
     ]
   end
 end
