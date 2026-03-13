@@ -59,14 +59,9 @@ defmodule OffBroadwayWebSocket.Producer do
 
     case run_on_upgrade(bootstrap_state) do
       {:ok, ready_state} ->
-        Telemetry.success(ready_state)
-
-        if ready_state.ws_timeout do
-          Process.send_after(self(), :check_timeout, ready_state.ws_timeout)
-          Logger.debug(fn -> "[#{@me}] scheduled timeout check in #{ready_state.ws_timeout / 1_000}s" end)
-        end
-
-        {:noreply, [], %State{ready_state | last_msg_dt: DateTime.utc_now()}}
+        ready_state
+        |> mark_connection_ready()
+        |> then(&{:noreply, [], &1})
 
       {:error, reason, failed_state} ->
         bootstrap_failed(reason, failed_state)
@@ -238,6 +233,19 @@ defmodule OffBroadwayWebSocket.Producer do
       kind, reason ->
         {:error, {:ws_send_throw, frame, {kind, reason}}}
     end
+  end
+
+  defp mark_connection_ready(%State{} = state) do
+    Telemetry.success(state)
+    schedule_timeout_if_needed(state)
+    %State{state | last_msg_dt: DateTime.utc_now()}
+  end
+
+  defp schedule_timeout_if_needed(%State{ws_timeout: nil}), do: :ok
+
+  defp schedule_timeout_if_needed(%State{ws_timeout: ws_timeout}) do
+    Process.send_after(self(), :check_timeout, ws_timeout)
+    Logger.debug(fn -> "[#{@me}] scheduled timeout check in #{ws_timeout / 1_000}s" end)
   end
 
   defp bootstrap_failed(reason, %State{} = state) do
