@@ -214,17 +214,32 @@ defmodule OffBroadwayWebSocket.Producer do
 
   defp send_outbound_frames(conn_pid, stream_ref, frames) do
     Enum.reduce_while(frames, {:ok, 0}, fn frame, {:ok, sent_count} ->
-      case :gun.ws_send(conn_pid, stream_ref, frame) do
+      case send_outbound_frame(conn_pid, stream_ref, frame) do
         :ok ->
           {:cont, {:ok, sent_count + 1}}
 
         {:error, reason} ->
-          {:halt, {:error, {:ws_send_failed, frame, reason}}}
-
-        other ->
-          {:halt, {:error, {:unexpected_ws_send_result, frame, other}}}
+          {:halt, {:error, reason}}
       end
     end)
+  end
+
+  defp send_outbound_frame(conn_pid, stream_ref, frame) do
+    try do
+      case :gun.ws_send(conn_pid, stream_ref, frame) do
+        :ok -> :ok
+        other -> {:error, {:unexpected_ws_send_result, frame, other}}
+      end
+    rescue
+      error ->
+        {:error, {:ws_send_exception, frame, error}}
+    catch
+      :exit, reason ->
+        {:error, {:ws_send_failed, frame, reason}}
+
+      kind, reason ->
+        {:error, {:ws_send_throw, frame, {kind, reason}}}
+    end
   end
 
   defp bootstrap_failed(reason, %State{} = state) do
