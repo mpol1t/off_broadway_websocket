@@ -8,6 +8,10 @@ defmodule OffBroadwayWebSocket.State do
   - **ws_timeout** – Idle timeout for WebSocket frames.
   - **await_timeout** – Timeout for synchronous Gun calls.
   - **headers** – HTTP headers for the upgrade.
+  - **on_upgrade** – Optional MFA invoked after websocket upgrade to produce outbound frames.
+  - **frame_handler** – Optional MFA invoked for normalized inbound data frames.
+  - **frame_handler_init_state** – Initial connection-local state for the frame handler.
+  - **frame_handler_state** – Current connection-local state for the frame handler.
   - **min_demand**, **max_demand** – Broadway demand settings.
   - **telemetry_id** – ID used when firing telemetry events.
   - **message_queue** – Internal buffer for frames before dispatch.
@@ -34,6 +38,10 @@ defmodule OffBroadwayWebSocket.State do
     ws_timeout:         nil,
     await_timeout:      @default_await_timeout,
     headers:            [],
+    on_upgrade:         nil,
+    frame_handler:      nil,
+    frame_handler_init_state: nil,
+    frame_handler_state: nil,
     min_demand:         @default_min_demand,
     max_demand:         @default_max_demand,
     telemetry_id:       @default_telemetry_id,
@@ -71,6 +79,10 @@ defmodule OffBroadwayWebSocket.State do
           ws_timeout:         non_neg_integer() | nil,
           await_timeout:      non_neg_integer(),
           headers:            [{String.t(), String.t()}],
+          on_upgrade:         {module(), atom(), [term()]} | nil,
+          frame_handler:      {module(), atom(), [term()]} | nil,
+          frame_handler_init_state: term(),
+          frame_handler_state: term(),
           min_demand:         non_neg_integer(),
           max_demand:         non_neg_integer(),
           telemetry_id:       atom(),
@@ -98,6 +110,9 @@ defmodule OffBroadwayWebSocket.State do
   - **:ws_timeout**, defaults to `nil`
   - **:await_timeout**, defaults to #{@default_await_timeout}
   - **:headers**, defaults to `[]`
+  - **:on_upgrade**, defaults to `nil`
+  - **:frame_handler**, defaults to `nil`
+  - **:frame_handler_state**, defaults to `nil`
   - **:telemetry_id**, defaults to #{inspect(@default_telemetry_id)}
   - **:broadway**, to customize min_demand/max_demand
   - **:ws_retry_opts**, defaults to default_ws_retry_opts/0
@@ -107,6 +122,7 @@ defmodule OffBroadwayWebSocket.State do
   def new(opts) do
     {min_demand, max_demand} = parse_demand_opts(Keyword.get(opts, :broadway, []))
     retry_opts               = Keyword.get(opts, :ws_retry_opts, default_ws_retry_opts())
+    frame_handler_init_state = Keyword.get(opts, :frame_handler_state, nil)
 
     %__MODULE__{
       min_demand:         min_demand,
@@ -119,6 +135,10 @@ defmodule OffBroadwayWebSocket.State do
       ws_timeout:         Keyword.get(opts,    :ws_timeout,    nil),
       await_timeout:      Keyword.get(opts,    :await_timeout, @default_await_timeout),
       headers:            Keyword.get(opts,    :headers,       []),
+      on_upgrade:         Keyword.get(opts,    :on_upgrade,    nil),
+      frame_handler:      Keyword.get(opts,    :frame_handler, nil),
+      frame_handler_init_state: frame_handler_init_state,
+      frame_handler_state: frame_handler_init_state,
       telemetry_id:       Keyword.get(opts,    :telemetry_id,  @default_telemetry_id),
       ws_retry_fun:       Keyword.get(opts,    :ws_retry_fun,  &default_ws_retry_fun/1)
     }
@@ -166,5 +186,19 @@ defmodule OffBroadwayWebSocket.State do
     }
   end
 
+  def update_on_msgs(state, msgs) when is_list(msgs) do
+    Enum.reduce(msgs, update_last_msg_dt(state), fn msg, acc ->
+      %__MODULE__{
+        acc
+        | message_queue: :queue.in(msg, acc.message_queue),
+          queue_size: acc.queue_size + 1
+      }
+    end)
+  end
+
   def update_last_msg_dt(state), do: %__MODULE__{state | last_msg_dt: DateTime.utc_now()}
+
+  def reset_frame_handler_state(state) do
+    %__MODULE__{state | frame_handler_state: state.frame_handler_init_state}
+  end
 end

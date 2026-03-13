@@ -15,6 +15,13 @@ defmodule OffBroadwayWebSocket.Producer do
 
   @me __MODULE__
 
+  @type outbound_frame :: {:text | :binary, iodata()}
+  @type on_upgrade_result :: {:ok, [outbound_frame()]} | {:error, term()}
+  @type frame_handler_result ::
+          {:emit, [term()], term()}
+          | {:skip, term()}
+          | {:error, term(), term()}
+
   @doc "Starts the WebSocket producer under a GenStage supervisor."
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenStage.start_link(__MODULE__, opts)
@@ -48,15 +55,17 @@ defmodule OffBroadwayWebSocket.Producer do
   @impl true
   def handle_info({:gun_upgrade, conn_pid, stream_ref, ["websocket"], _headers}, state) do
     Logger.debug(fn -> "[#{@me}] WebSocket upgraded" end)
+    bootstrap_state = %State{state | conn_pid: conn_pid, stream_ref: stream_ref}
 
-    Telemetry.success(state)
+    case run_on_upgrade(bootstrap_state) do
+      {:ok, ready_state} ->
+        ready_state
+        |> mark_connection_ready()
+        |> then(&{:noreply, [], &1})
 
-    if state.ws_timeout do
-      Process.send_after(self(), :check_timeout, state.ws_timeout)
-      Logger.debug(fn -> "[#{@me}] scheduled timeout check in #{state.ws_timeout / 1_000}s" end)
+      {:error, reason, failed_state} ->
+        bootstrap_failed(reason, failed_state)
     end
-
-    {:noreply, [], %State{state | conn_pid: conn_pid, stream_ref: stream_ref, last_msg_dt: DateTime.utc_now()}}
   end
 
   @impl true
@@ -72,7 +81,7 @@ defmodule OffBroadwayWebSocket.Producer do
   @impl true
   def handle_info({:gun_ws, pid, _ref, msg}, state) do
     case Handlers.normalize(msg) do
-      {:data, payload}  -> State.update_on_msg(state, payload) |> dispatch_events()
+      {:data, payload}  -> handle_data_frame(pid, payload, state)
       :pong             -> State.update_last_msg_dt(state) |> cont(:pong)
       :ping             -> cont(state, :ping)
       {:close, payload} -> halt(pid, state, payload)
@@ -116,13 +125,6 @@ defmodule OffBroadwayWebSocket.Producer do
           {:ok, State.t()}
           | {:retry, non_neg_integer(), State.t()}
           | {:error, :max_retries_exhausted | term()}
-  @doc """
-  Attempts to establish a new WebSocket connection using the configured client.
-
-  Returns `{:ok, state}` on success, `{:retry, delay, state}` when another
-  attempt should be scheduled, or `{:error, reason}` when retries are exhausted
-  or an unrecoverable error occurs.
-  """
   defp do_connect(%State{ws_retry_opts: %{retries_left: 0}}) do
     Logger.warning("[#{@me}] retries exhausted")
     {:error, :max_retries_exhausted}
@@ -132,7 +134,11 @@ defmodule OffBroadwayWebSocket.Producer do
     case Client.connect_once(state) do
       {:ok, conn_state} ->
         Logger.debug(fn -> "[#{@me}] connected to #{state.url}#{state.path}" end)
-        new_state = Map.merge(%{state | ws_retry_opts: state.ws_init_retry_opts}, conn_state)
+        new_state =
+          state
+          |> State.reset_frame_handler_state()
+          |> Map.merge(%{ws_retry_opts: state.ws_init_retry_opts})
+          |> Map.merge(conn_state)
         {:ok, new_state}
 
       {:error, reason} ->
@@ -146,13 +152,6 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @spec dispatch_events(State.t()) :: {:noreply, list(any()), State.t()}
-  @doc """
-  Delivers buffered WebSocket messages when demand is available.
-
-  Events are popped from the internal queue up to the current demand and
-  returned to the Broadway pipeline. When not enough data is available, no
-  messages are emitted and state is left unchanged.
-  """
   defp dispatch_events(%State{total_demand: d, queue_size: q} = state) when d > 0 and q > 0 do
     {count, events, queue} = Utils.pop_items(state.message_queue, q, d)
     new_state = %State{state | message_queue: queue, queue_size: q - count, total_demand: d - count}
@@ -160,6 +159,127 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   defp dispatch_events(state), do: {:noreply, [], state}
+
+  defp handle_data_frame(_pid, payload, %State{frame_handler: nil} = state) do
+    state
+    |> State.update_on_msg(payload)
+    |> dispatch_events()
+  end
+
+  defp handle_data_frame(_pid, payload, %State{frame_handler: {module, function, args}} = state) do
+    case apply(module, function, [payload, state.frame_handler_state | args]) do
+      {:emit, payloads, new_handler_state} when is_list(payloads) ->
+        state
+        |> with_frame_handler_state(new_handler_state)
+        |> State.update_on_msgs(payloads)
+        |> dispatch_events()
+
+      {:skip, new_handler_state} ->
+        state
+        |> with_frame_handler_state(new_handler_state)
+        |> State.update_last_msg_dt()
+        |> dispatch_events()
+
+      {:error, reason, new_handler_state} ->
+        frame_handler_failed(reason, with_frame_handler_state(state, new_handler_state))
+
+      other ->
+        frame_handler_failed({:invalid_frame_handler_result, other}, state)
+    end
+  rescue
+    error ->
+      frame_handler_failed({:frame_handler_exception, error}, state)
+  end
+
+  defp run_on_upgrade(%State{on_upgrade: nil} = state), do: {:ok, state}
+
+  defp run_on_upgrade(%State{on_upgrade: {module, function, args}} = state) do
+    with {:ok, frames} <- apply(module, function, args),
+         {:ok, _sent} <- send_outbound_frames(state.conn_pid, state.stream_ref, frames) do
+      {:ok, state}
+    else
+      {:error, reason} -> {:error, reason, state}
+      other -> {:error, {:invalid_on_upgrade_result, other}, state}
+    end
+  rescue
+    error -> {:error, {:on_upgrade_exception, error}, state}
+  end
+
+  defp send_outbound_frames(_conn_pid, _stream_ref, []), do: {:ok, :empty}
+
+  defp send_outbound_frames(conn_pid, stream_ref, frames) do
+    Enum.reduce_while(frames, {:ok, 0}, fn frame, {:ok, sent_count} ->
+      case send_outbound_frame(conn_pid, stream_ref, frame) do
+        :ok ->
+          {:cont, {:ok, sent_count + 1}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp send_outbound_frame(conn_pid, stream_ref, frame) do
+    try do
+      :ok = :gun.ws_send(conn_pid, stream_ref, frame)
+      :ok
+    rescue
+      error ->
+        {:error, {:ws_send_exception, frame, error}}
+    catch
+      :exit, reason ->
+        {:error, {:ws_send_failed, frame, reason}}
+
+      kind, reason ->
+        {:error, {:ws_send_throw, frame, {kind, reason}}}
+    end
+  end
+
+  defp mark_connection_ready(%State{} = state) do
+    Telemetry.success(state)
+    schedule_timeout_if_needed(state)
+    %State{state | last_msg_dt: DateTime.utc_now()}
+  end
+
+  defp schedule_timeout_if_needed(%State{ws_timeout: nil}), do: :ok
+
+  defp schedule_timeout_if_needed(%State{ws_timeout: ws_timeout}) do
+    Process.send_after(self(), :check_timeout, ws_timeout)
+    Logger.debug(fn -> "[#{@me}] scheduled timeout check in #{ws_timeout / 1_000}s" end)
+  end
+
+  defp bootstrap_failed(reason, %State{} = state) do
+    Logger.error("[#{@me}] websocket bootstrap failed: #{inspect(reason)}")
+    Telemetry.fail(state, {:bootstrap_failure, reason})
+
+    updated_ws_retry_opts = state.ws_retry_fun.(state.ws_retry_opts)
+
+    if state.conn_pid, do: :gun.shutdown(state.conn_pid)
+
+    Process.send_after(self(), :connect, updated_ws_retry_opts.delay)
+
+    {:noreply, [], %{state | conn_pid: nil, stream_ref: nil, ws_retry_opts: updated_ws_retry_opts}}
+  end
+
+  defp frame_handler_failed(reason, %State{} = state) do
+    Logger.error("[#{@me}] inbound frame handler failed: #{inspect(reason)}")
+    Telemetry.fail(state, {:frame_handler_failure, reason})
+
+    updated_ws_retry_opts = state.ws_retry_fun.(state.ws_retry_opts)
+
+    if state.conn_pid, do: :gun.shutdown(state.conn_pid)
+
+    Process.send_after(self(), :connect, updated_ws_retry_opts.delay)
+
+    failed_state =
+      state
+      |> State.reset_frame_handler_state()
+      |> Map.put(:conn_pid, nil)
+      |> Map.put(:stream_ref, nil)
+      |> Map.put(:ws_retry_opts, updated_ws_retry_opts)
+
+    {:noreply, [], failed_state}
+  end
 
   @impl true
   def terminate(_reason, %State{conn_pid: pid} = state) do
@@ -216,5 +336,9 @@ defmodule OffBroadwayWebSocket.Producer do
     Logger.error("[#{@me}] gun connection error: #{inspect(reason)}")
     Telemetry.fail(state, reason)
     {:noreply, [], state}
+  end
+
+  defp with_frame_handler_state(state, new_handler_state) do
+    %State{state | frame_handler_state: new_handler_state}
   end
 end
