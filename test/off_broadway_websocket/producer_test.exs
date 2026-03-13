@@ -308,7 +308,11 @@ defmodule OffBroadwayWebSocket.ProducerTest do
       assert_receive :connect, 200
 
       assert_receive {:bootstrap_failure, %{count: 1},
-                      %{reason: {:bootstrap_failure, {:ws_send_failed, {:text, "subscribe-1"}, :closed}}}}, 200
+                      %{
+                        reason:
+                          {:bootstrap_failure,
+                           {:unexpected_ws_send_result, {:text, "subscribe-1"}, {:error, :closed}}}
+                      }}, 200
 
       refute_receive {:success, _, _}, 100
 
