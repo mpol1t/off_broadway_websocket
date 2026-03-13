@@ -19,6 +19,16 @@ defmodule OffBroadwayWebSocket.ProducerTest do
       send(test_pid, {:on_upgrade_called, {:error, reason}})
       {:error, reason}
     end
+
+    def invalid(test_pid) do
+      send(test_pid, {:on_upgrade_called, :invalid})
+      :invalid
+    end
+
+    def boom(test_pid) do
+      send(test_pid, {:on_upgrade_called, :boom})
+      raise "boom"
+    end
   end
 
   defmodule FrameHandler do
@@ -203,6 +213,47 @@ defmodule OffBroadwayWebSocket.ProducerTest do
       :meck.unload(:gun)
     end
 
+    test "on_upgrade can return empty frames without calling ws_send" do
+      conn = self()
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade: {UpgradeHook, :frames, [self(), []]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self()
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :ws_send, fn ^conn, :ref, frame ->
+        send(self(), {:ws_send, frame})
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info(
+              {:gun_upgrade, conn, :ref, ["websocket"], []},
+              state
+            )
+
+          assert new_state.conn_pid == conn
+          assert new_state.stream_ref == :ref
+          assert new_state.last_msg_dt != nil
+        end)
+
+      assert capture =~ "WebSocket upgraded"
+      assert_receive {:on_upgrade_called, []}, 200
+      assert_receive {:success, %{count: 1}, %{url: "wss://api.test.com/v1/test-endpoint"}}, 200
+      refute_receive {:ws_send, _}, 100
+
+      :meck.unload(:gun)
+    end
+
     test "on_upgrade callback failure triggers reconnect/backoff without readiness" do
       conn = self()
       pid = self()
@@ -254,6 +305,118 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
       :meck.unload(:gun)
       :telemetry.detach(:bootstrap_fail_cb)
+    end
+
+    test "invalid on_upgrade return triggers reconnect/backoff without readiness" do
+      conn = self()
+      pid = self()
+
+      :telemetry.attach(
+        :bootstrap_fail_invalid,
+        [:dummy_telemetry, :connection, :failure],
+        fn _e, ms, md, _ -> send(pid, {:bootstrap_failure, ms, md}) end,
+        nil
+      )
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade: {UpgradeHook, :invalid, [self()]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self(),
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :shutdown, fn ^conn ->
+        send(pid, :shutdown_called)
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info(
+              {:gun_upgrade, conn, :ref, ["websocket"], []},
+              state
+            )
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+          assert new_state.last_msg_dt == nil
+        end)
+
+      assert capture =~ "websocket bootstrap failed"
+      assert_receive {:on_upgrade_called, :invalid}, 200
+      assert_receive :shutdown_called, 200
+      assert_receive :connect, 200
+
+      assert_receive {:bootstrap_failure, %{count: 1},
+                      %{reason: {:bootstrap_failure, {:invalid_on_upgrade_result, :invalid}}}}, 200
+
+      refute_receive {:success, _, _}, 100
+
+      :meck.unload(:gun)
+      :telemetry.detach(:bootstrap_fail_invalid)
+    end
+
+    test "on_upgrade exception triggers reconnect/backoff without readiness" do
+      conn = self()
+      pid = self()
+
+      :telemetry.attach(
+        :bootstrap_fail_exception,
+        [:dummy_telemetry, :connection, :failure],
+        fn _e, ms, md, _ -> send(pid, {:bootstrap_failure, ms, md}) end,
+        nil
+      )
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade: {UpgradeHook, :boom, [self()]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self(),
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :shutdown, fn ^conn ->
+        send(pid, :shutdown_called)
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info(
+              {:gun_upgrade, conn, :ref, ["websocket"], []},
+              state
+            )
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+          assert new_state.last_msg_dt == nil
+        end)
+
+      assert capture =~ "websocket bootstrap failed"
+      assert_receive {:on_upgrade_called, :boom}, 200
+      assert_receive :shutdown_called, 200
+      assert_receive :connect, 200
+
+      assert_receive {:bootstrap_failure, %{count: 1},
+                      %{reason: {:bootstrap_failure, {:on_upgrade_exception, %RuntimeError{message: "boom"}}}}}, 200
+
+      refute_receive {:success, _, _}, 100
+
+      :meck.unload(:gun)
+      :telemetry.detach(:bootstrap_fail_exception)
     end
 
     test "immediate ws_send failure triggers reconnect/backoff without readiness" do
@@ -314,6 +477,66 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
       :meck.unload(:gun)
       :telemetry.detach(:bootstrap_fail_send)
+    end
+
+    test "non-exit ws_send failure triggers reconnect/backoff without readiness" do
+      conn = self()
+      pid = self()
+
+      :telemetry.attach(
+        :bootstrap_fail_send_throw,
+        [:dummy_telemetry, :connection, :failure],
+        fn _e, ms, md, _ -> send(pid, {:bootstrap_failure, ms, md}) end,
+        nil
+      )
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade: {UpgradeHook, :frames, [self(), [{:text, "subscribe-1"}]]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self(),
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :ws_send, fn ^conn, :ref, {:text, "subscribe-1"} ->
+        throw(:closed)
+      end)
+
+      :meck.expect(:gun, :shutdown, fn ^conn ->
+        send(pid, :shutdown_called)
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info(
+              {:gun_upgrade, conn, :ref, ["websocket"], []},
+              state
+            )
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+          assert new_state.last_msg_dt == nil
+        end)
+
+      assert capture =~ "websocket bootstrap failed"
+      assert_receive {:on_upgrade_called, [{:text, "subscribe-1"}]}, 200
+      assert_receive :shutdown_called, 200
+      assert_receive :connect, 200
+
+      assert_receive {:bootstrap_failure, %{count: 1},
+                      %{reason: {:bootstrap_failure, {:ws_send_throw, {:text, "subscribe-1"}, {:throw, :closed}}}}}, 200
+
+      refute_receive {:success, _, _}, 100
+
+      :meck.unload(:gun)
+      :telemetry.detach(:bootstrap_fail_send_throw)
     end
 
     test "reconnect reruns on_upgrade" do
