@@ -226,10 +226,8 @@ defmodule OffBroadwayWebSocket.Producer do
 
   defp send_outbound_frame(conn_pid, stream_ref, frame) do
     try do
-      case :gun.ws_send(conn_pid, stream_ref, frame) do
-        :ok -> :ok
-        other -> {:error, {:unexpected_ws_send_result, frame, other}}
-      end
+      :ok = :gun.ws_send(conn_pid, stream_ref, frame)
+      :ok
     rescue
       error ->
         {:error, {:ws_send_exception, frame, error}}

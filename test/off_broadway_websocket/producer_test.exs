@@ -281,7 +281,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
       :meck.new(:gun, [:non_strict])
 
       :meck.expect(:gun, :ws_send, fn ^conn, :ref, {:text, "subscribe-1"} ->
-        {:error, :closed}
+        exit(:closed)
       end)
 
       :meck.expect(:gun, :shutdown, fn ^conn ->
@@ -308,11 +308,7 @@ defmodule OffBroadwayWebSocket.ProducerTest do
       assert_receive :connect, 200
 
       assert_receive {:bootstrap_failure, %{count: 1},
-                      %{
-                        reason:
-                          {:bootstrap_failure,
-                           {:unexpected_ws_send_result, {:text, "subscribe-1"}, {:error, :closed}}}
-                      }}, 200
+                      %{reason: {:bootstrap_failure, {:ws_send_failed, {:text, "subscribe-1"}, :closed}}}}, 200
 
       refute_receive {:success, _, _}, 100
 
