@@ -63,10 +63,37 @@ defmodule OffBroadwayWebSocket.StateTest do
       assert state.gun_opts           == %{}
       assert state.ws_timeout         == nil
       assert state.headers            == []
+      assert state.on_upgrade         == nil
+      assert state.frame_handler      == nil
+      assert state.frame_handler_init_state == nil
+      assert state.frame_handler_state == nil
       assert state.telemetry_id       == :websocket_producer
       assert state.message_queue      == :queue.new()
       assert state.ws_retry_opts      == State.default_ws_retry_opts()
       assert state.ws_init_retry_opts == State.default_ws_retry_opts()
+    end
+
+    test "stores on_upgrade callback when provided" do
+      on_upgrade = {Kernel, :tap, [fn frames -> frames end]}
+      state = State.new(url: "ws://example.com", path: "/socket", on_upgrade: on_upgrade)
+
+      assert state.on_upgrade == on_upgrade
+    end
+
+    test "stores frame handler and initial handler state when provided" do
+      frame_handler = {Kernel, :tap, [fn value -> value end]}
+
+      state =
+        State.new(
+          url: "ws://example.com",
+          path: "/socket",
+          frame_handler: frame_handler,
+          frame_handler_state: %{chan_ids: %{}}
+        )
+
+      assert state.frame_handler == frame_handler
+      assert state.frame_handler_init_state == %{chan_ids: %{}}
+      assert state.frame_handler_state == %{chan_ids: %{}}
     end
   end
 

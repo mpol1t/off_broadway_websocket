@@ -7,6 +7,39 @@ defmodule OffBroadwayWebSocket.ProducerTest do
   alias OffBroadwayWebSocket.Producer
   alias OffBroadwayWebSocket.State
 
+  defmodule UpgradeHook do
+    @moduledoc false
+
+    def frames(test_pid, frames) do
+      send(test_pid, {:on_upgrade_called, frames})
+      {:ok, frames}
+    end
+
+    def fail(test_pid, reason) do
+      send(test_pid, {:on_upgrade_called, {:error, reason}})
+      {:error, reason}
+    end
+  end
+
+  defmodule FrameHandler do
+    @moduledoc false
+
+    def emit(payload, state, test_pid) do
+      send(test_pid, {:frame_handler_called, :emit, payload, state})
+      {:emit, [payload, payload <> "-extra"], %{state | seen: [payload | state.seen]}}
+    end
+
+    def skip(payload, state, test_pid) do
+      send(test_pid, {:frame_handler_called, :skip, payload, state})
+      {:skip, Map.put(state, :skipped, payload)}
+    end
+
+    def fail(payload, state, test_pid) do
+      send(test_pid, {:frame_handler_called, :error, payload, state})
+      {:error, :bad_frame, Map.put(state, :failed, payload)}
+    end
+  end
+
   @test_opts [
     broadway: [processors: [default: [min_demand: 0, max_demand: 100]]],
     url: "wss://api.test.com",
@@ -127,6 +160,208 @@ defmodule OffBroadwayWebSocket.ProducerTest do
       assert_receive {:success, %{count: 1}, %{url: "wss://api.test.com/v1/test-endpoint"}}, 500
       refute_receive :check_timeout
     end
+
+    test "runs optional on_upgrade callback and sends outbound frames in order before readiness" do
+      conn = self()
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade:
+              {UpgradeHook, :frames, [self(), [{:text, "subscribe-1"}, {:binary, "subscribe-2"}]]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self()
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :ws_send, fn ^conn, :ref, frame ->
+        send(self(), {:ws_send, frame})
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info(
+              {:gun_upgrade, conn, :ref, ["websocket"], []},
+              state
+            )
+
+          assert new_state.conn_pid == conn
+          assert new_state.stream_ref == :ref
+          assert new_state.last_msg_dt != nil
+        end)
+
+      assert capture =~ "WebSocket upgraded"
+      assert_receive {:on_upgrade_called, [{:text, "subscribe-1"}, {:binary, "subscribe-2"}]}, 200
+      assert_receive {:ws_send, {:text, "subscribe-1"}}, 200
+      assert_receive {:ws_send, {:binary, "subscribe-2"}}, 200
+      assert_receive {:success, %{count: 1}, %{url: "wss://api.test.com/v1/test-endpoint"}}, 200
+
+      :meck.unload(:gun)
+    end
+
+    test "on_upgrade callback failure triggers reconnect/backoff without readiness" do
+      conn = self()
+      pid = self()
+
+      :telemetry.attach(
+        :bootstrap_fail_cb,
+        [:dummy_telemetry, :connection, :failure],
+        fn _e, ms, md, _ -> send(pid, {:bootstrap_failure, ms, md}) end,
+        nil
+      )
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade: {UpgradeHook, :fail, [self(), :subscribe_failed]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self(),
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :shutdown, fn ^conn ->
+        send(pid, :shutdown_called)
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info(
+              {:gun_upgrade, conn, :ref, ["websocket"], []},
+              state
+            )
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+          assert new_state.last_msg_dt == nil
+        end)
+
+      assert capture =~ "websocket bootstrap failed"
+      assert_receive {:on_upgrade_called, {:error, :subscribe_failed}}, 200
+      assert_receive :shutdown_called, 200
+      assert_receive :connect, 200
+      assert_receive {:bootstrap_failure, %{count: 1}, %{reason: {:bootstrap_failure, :subscribe_failed}}}, 200
+      refute_receive {:success, _, _}, 100
+
+      :meck.unload(:gun)
+      :telemetry.detach(:bootstrap_fail_cb)
+    end
+
+    test "immediate ws_send failure triggers reconnect/backoff without readiness" do
+      conn = self()
+      pid = self()
+
+      :telemetry.attach(
+        :bootstrap_fail_send,
+        [:dummy_telemetry, :connection, :failure],
+        fn _e, ms, md, _ -> send(pid, {:bootstrap_failure, ms, md}) end,
+        nil
+      )
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade: {UpgradeHook, :frames, [self(), [{:text, "subscribe-1"}]]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self(),
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :ws_send, fn ^conn, :ref, {:text, "subscribe-1"} ->
+        {:error, :closed}
+      end)
+
+      :meck.expect(:gun, :shutdown, fn ^conn ->
+        send(pid, :shutdown_called)
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info(
+              {:gun_upgrade, conn, :ref, ["websocket"], []},
+              state
+            )
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+          assert new_state.last_msg_dt == nil
+        end)
+
+      assert capture =~ "websocket bootstrap failed"
+      assert_receive {:on_upgrade_called, [{:text, "subscribe-1"}]}, 200
+      assert_receive :shutdown_called, 200
+      assert_receive :connect, 200
+
+      assert_receive {:bootstrap_failure, %{count: 1},
+                      %{reason: {:bootstrap_failure, {:ws_send_failed, {:text, "subscribe-1"}, :closed}}}}, 200
+
+      refute_receive {:success, _, _}, 100
+
+      :meck.unload(:gun)
+      :telemetry.detach(:bootstrap_fail_send)
+    end
+
+    test "reconnect reruns on_upgrade" do
+      conn = self()
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            on_upgrade: {UpgradeHook, :frames, [self(), [{:text, "subscribe-1"}]]}
+          )
+        )
+        | ws_timeout: nil,
+          pid: self(),
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :ws_send, fn ^conn, :ref, {:text, "subscribe-1"} ->
+        send(self(), {:ws_send, {:text, "subscribe-1"}})
+        :ok
+      end)
+
+      {:noreply, [], ready_state} =
+        Producer.handle_info(
+          {:gun_upgrade, conn, :ref, ["websocket"], []},
+          state
+        )
+
+      assert_receive {:on_upgrade_called, [{:text, "subscribe-1"}]}, 200
+      assert_receive {:ws_send, {:text, "subscribe-1"}}, 200
+
+      {:noreply, [], disconnected_state} =
+        Producer.handle_info({:gun_down, conn, :ws, :normal, []}, ready_state)
+
+      assert disconnected_state.conn_pid == nil
+
+      {:noreply, [], reconnected_state} =
+        Producer.handle_info(
+          {:gun_upgrade, conn, :ref, ["websocket"], []},
+          disconnected_state
+        )
+
+      assert reconnected_state.conn_pid == conn
+      assert_receive {:on_upgrade_called, [{:text, "subscribe-1"}]}, 200
+      assert_receive {:ws_send, {:text, "subscribe-1"}}, 200
+
+      :meck.unload(:gun)
+    end
   end
 
   describe "handle_info(:gun_response)" do
@@ -178,6 +413,125 @@ defmodule OffBroadwayWebSocket.ProducerTest do
         Producer.handle_info({:gun_ws, nil, nil, {:text, msg}}, state)
 
       assert new_state.queue_size == 0
+    end
+
+    test "frame_handler emit path can emit many payloads and update handler state" do
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            frame_handler: {FrameHandler, :emit, [self()]},
+            frame_handler_state: %{seen: []}
+          )
+        )
+        | total_demand: 2
+      }
+
+      {:noreply, ["hi", "hi-extra"], new_state} =
+        Producer.handle_info({:gun_ws, nil, nil, {:text, "hi"}}, state)
+
+      assert_receive {:frame_handler_called, :emit, "hi", %{seen: []}}, 200
+      assert new_state.queue_size == 0
+      assert new_state.frame_handler_state == %{seen: ["hi"]}
+      assert new_state.last_msg_dt != nil
+    end
+
+    test "frame_handler skip path emits nothing and still refreshes liveness" do
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            frame_handler: {FrameHandler, :skip, [self()]},
+            frame_handler_state: %{seen: []}
+          )
+        )
+        | total_demand: 1
+      }
+
+      assert {:noreply, [], new_state} =
+               Producer.handle_info({:gun_ws, nil, nil, {:text, "hb"}}, state)
+
+      assert_receive {:frame_handler_called, :skip, "hb", %{seen: []}}, 200
+      assert new_state.queue_size == 0
+      assert new_state.last_msg_dt != nil
+      assert new_state.frame_handler_state == %{seen: [], skipped: "hb"}
+    end
+
+    test "frame_handler fatal error triggers reconnect/backoff and clears connection-local state" do
+      conn = self()
+      pid = self()
+
+      :telemetry.attach(
+        :frame_handler_fail,
+        [:dummy_telemetry, :connection, :failure],
+        fn _e, ms, md, _ -> send(pid, {:frame_handler_failure, ms, md}) end,
+        nil
+      )
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            frame_handler: {FrameHandler, :fail, [self()]},
+            frame_handler_state: %{seen: [], baseline: true}
+          )
+        )
+        | conn_pid: conn,
+          stream_ref: :ref,
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :shutdown, fn ^conn ->
+        send(pid, :shutdown_called)
+        :ok
+      end)
+
+      capture =
+        capture_log(fn ->
+          {:noreply, [], new_state} =
+            Producer.handle_info({:gun_ws, conn, :ref, {:text, "bad"}}, state)
+
+          assert new_state.conn_pid == nil
+          assert new_state.stream_ref == nil
+          assert new_state.frame_handler_state == %{seen: [], baseline: true}
+        end)
+
+      assert capture =~ "inbound frame handler failed"
+      assert_receive {:frame_handler_called, :error, "bad", %{seen: [], baseline: true}}, 200
+      assert_receive :shutdown_called, 200
+      assert_receive :connect, 200
+
+      assert_receive {:frame_handler_failure, %{count: 1},
+                      %{reason: {:frame_handler_failure, :bad_frame}}}, 200
+
+      :meck.unload(:gun)
+      :telemetry.detach(:frame_handler_fail)
+    end
+
+    test "frame_handler_state resets to the initial baseline on reconnect" do
+      expect(OffBroadwayWebSocket.MockClient, :connect, fn _url, _path, _opts, _await, _headers ->
+        {:ok, %{conn_pid: :reconnected, stream_ref: :new_ref}}
+      end)
+
+      state = %{
+        State.new(
+          Keyword.merge(@test_opts,
+            frame_handler: {FrameHandler, :emit, [self()]},
+            frame_handler_state: %{seen: [], baseline: true}
+          )
+        )
+        | total_demand: 2,
+          ws_retry_opts: %{delay: 5, retries_left: 1, max_retries: 1}
+      }
+
+      {:noreply, ["hi", "hi-extra"], after_emit_state} =
+        Producer.handle_info({:gun_ws, nil, nil, {:text, "hi"}}, state)
+
+      assert after_emit_state.frame_handler_state == %{seen: ["hi"], baseline: true}
+
+      assert {:noreply, [], reconnected_state} = Producer.handle_info(:connect, after_emit_state)
+      assert reconnected_state.conn_pid == :reconnected
+      assert reconnected_state.stream_ref == :new_ref
+      assert reconnected_state.frame_handler_state == %{seen: [], baseline: true}
     end
   end
 
