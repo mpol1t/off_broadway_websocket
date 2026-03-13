@@ -33,6 +33,7 @@ jobs:
         run: MIX_ENV=test mix deps.get
 
       - name: Cache Dialyzer PLT
+        id: plt-cache
         uses: actions/cache@v3
         with:
           path: _build
@@ -41,13 +42,16 @@ jobs:
 
       - name: Build PLT
         run: mix dialyzer --plt
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.plt-cache.outputs.cache-hit != 'true'
 
       - name: Run Dialyzer
         run: mix dialyzer
 
       - name: Run Credo Linter
         run: mix credo
+
+      - name: Build HexDocs
+        run: MIX_ENV=dev mix docs
 
       - name: Run tests
         run: MIX_ENV=test mix coveralls.json
