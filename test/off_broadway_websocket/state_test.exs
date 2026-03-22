@@ -95,6 +95,13 @@ defmodule OffBroadwayWebSocket.StateTest do
       assert state.frame_handler_init_state == %{chan_ids: %{}}
       assert state.frame_handler_state == %{chan_ids: %{}}
     end
+
+    test "stores headers_fn when provided" do
+      headers_fn = fn -> [{"authorization", "fresh"}] end
+      state = State.new(url: "ws://example.com", path: "/socket", headers_fn: headers_fn)
+
+      assert state.headers_fn == headers_fn
+    end
   end
 
   describe "default_ws_retry_opts/0" do

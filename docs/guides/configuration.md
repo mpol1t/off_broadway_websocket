@@ -12,6 +12,7 @@
 - `:ws_timeout` - idle timeout in milliseconds
 - `:await_timeout` - timeout for `:gun.await_up/2`
 - `:headers` - websocket upgrade headers
+- `:headers_fn` - optional zero-arity callback for per-connect header refresh
 - `:telemetry_id` - prefix for telemetry events
 - `:gun_opts` - options forwarded to `:gun`
 - `:min_demand` / `:max_demand` - Broadway producer demand settings
@@ -36,6 +37,17 @@ The default retry state is:
 - `:on_upgrade` - optional MFA run after websocket upgrade and before readiness
 - `:frame_handler` - optional MFA run for normalized inbound data frames
 - `:frame_handler_state` - initial connection-local state for `:frame_handler`
+
+## Header refresh for authenticated feeds
+
+Use static `:headers` when auth headers are long-lived.
+Use `:headers_fn` when headers need to be refreshed each reconnect.
+
+`headers_fn` may return:
+
+- `[{"header", "value"}]`
+- `{:ok, [{"header", "value"}]}`
+- `{:error, reason}` (connection attempt fails and retry/backoff applies)
 
 ## `gun_opts`
 

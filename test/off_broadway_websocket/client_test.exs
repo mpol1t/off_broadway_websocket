@@ -2,6 +2,17 @@ defmodule OffBroadwayWebSocket.ClientTest do
   use ExUnit.Case, async: true
 
   alias OffBroadwayWebSocket.Client
+  alias OffBroadwayWebSocket.State
+
+  defmodule ConnectOnceClient do
+    @behaviour OffBroadwayWebSocket.ClientBehaviour
+
+    @impl true
+    def connect(_url, _path, _gun_opts, _await_timeout, headers) do
+      send(Process.get(:test_pid), {:connect_headers, headers})
+      {:ok, %{conn_pid: :pid, stream_ref: :ref}}
+    end
+  end
 
   describe "connect/5" do
     test "successful connection" do
@@ -151,6 +162,45 @@ defmodule OffBroadwayWebSocket.ClientTest do
 
       assert :meck.num_calls(:gun, :open, 1)
       :meck.unload(:gun)
+    end
+  end
+
+  describe "connect_once/1" do
+    setup do
+      original_client = Application.get_env(:off_broadway_websocket, :client)
+      on_exit(fn -> Application.put_env(:off_broadway_websocket, :client, original_client) end)
+      :ok
+    end
+
+    test "uses headers_fn result when provided" do
+      test_pid = self()
+
+      Process.put(:test_pid, test_pid)
+      on_exit(fn -> Process.delete(:test_pid) end)
+      Application.put_env(:off_broadway_websocket, :client, ConnectOnceClient)
+
+      state =
+        State.new(
+          url: "wss://example.com",
+          path: "/socket",
+          headers: [{"authorization", "stale"}],
+          headers_fn: fn -> [{"authorization", "fresh"}] end
+        )
+
+      assert {:ok, %{conn_pid: :pid, stream_ref: :ref}} = Client.connect_once(state)
+      assert_receive {:connect_headers, [{"authorization", "fresh"}]}
+    end
+
+    test "returns typed error when headers_fn raises" do
+      state =
+        State.new(
+          url: "wss://example.com",
+          path: "/socket",
+          headers_fn: fn -> raise "boom" end
+        )
+
+      assert {:error, {:headers_fn_exception, %RuntimeError{message: "boom"}}} =
+               Client.connect_once(state)
     end
   end
 end

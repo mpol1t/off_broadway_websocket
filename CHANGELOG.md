@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
+## [1.2.1] - 2026-03-22
+
+### Added
+
+- Added optional `:headers_fn` connection option for dynamic websocket upgrade header refresh on each connect/reconnect attempt.
+- Added HexDocs guide for auth-header refresh and handshake-failure behavior.
+
+### Changed
+
+- `OffBroadwayWebSocket.Client.connect_once/1` now resolves headers through `:headers_fn` when configured and returns typed errors for invalid callback results.
+- Handshake failures with `:gun_response` in both `:nofin` and `:fin` variants now stop deterministically with `{:handshake_failure, {status, headers}}`.
+
+### Tests
+
+- Added coverage for `headers_fn` success/error paths and `:fin` handshake-failure handling.
+
 ## [1.2.0] - 2026-03-13
 
 ### Added

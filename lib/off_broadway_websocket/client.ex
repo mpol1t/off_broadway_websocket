@@ -62,6 +62,31 @@ defmodule OffBroadwayWebSocket.Client do
         OffBroadwayWebSocket.Client
       )
 
-    client.connect(state.url, state.path, state.gun_opts, state.await_timeout, state.headers)
+    with {:ok, headers} <- resolve_headers(state) do
+      client.connect(state.url, state.path, state.gun_opts, state.await_timeout, headers)
+    end
+  end
+
+  defp resolve_headers(%State{headers_fn: nil, headers: headers}), do: {:ok, headers}
+
+  defp resolve_headers(%State{headers_fn: headers_fn}) when is_function(headers_fn, 0) do
+    try do
+      case headers_fn.() do
+        headers when is_list(headers) ->
+          {:ok, headers}
+
+        {:ok, headers} when is_list(headers) ->
+          {:ok, headers}
+
+        {:error, reason} ->
+          {:error, {:headers_resolution_failed, reason}}
+
+        other ->
+          {:error, {:invalid_headers_fn_result, other}}
+      end
+    rescue
+      error ->
+        {:error, {:headers_fn_exception, error}}
+    end
   end
 end
