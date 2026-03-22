@@ -8,6 +8,7 @@ defmodule OffBroadwayWebSocket.State do
   - **ws_timeout** – Idle timeout for WebSocket frames.
   - **await_timeout** – Timeout for synchronous Gun calls.
   - **headers** – HTTP headers for the upgrade.
+  - **headers_fn** – Optional callback to refresh upgrade headers before each connect.
   - **on_upgrade** – Optional MFA invoked after websocket upgrade to produce outbound frames.
   - **frame_handler** – Optional MFA invoked for normalized inbound data frames.
   - **frame_handler_init_state** – Initial connection-local state for the frame handler.
@@ -38,6 +39,7 @@ defmodule OffBroadwayWebSocket.State do
     ws_timeout:         nil,
     await_timeout:      @default_await_timeout,
     headers:            [],
+    headers_fn:         nil,
     on_upgrade:         nil,
     frame_handler:      nil,
     frame_handler_init_state: nil,
@@ -79,6 +81,7 @@ defmodule OffBroadwayWebSocket.State do
           ws_timeout:         non_neg_integer() | nil,
           await_timeout:      non_neg_integer(),
           headers:            [{String.t(), String.t()}],
+          headers_fn:         (() -> [{String.t(), String.t()}] | {:ok, [{String.t(), String.t()}]} | {:error, term()}) | nil,
           on_upgrade:         {module(), atom(), [term()]} | nil,
           frame_handler:      {module(), atom(), [term()]} | nil,
           frame_handler_init_state: term(),
@@ -110,6 +113,7 @@ defmodule OffBroadwayWebSocket.State do
   - **:ws_timeout**, defaults to `nil`
   - **:await_timeout**, defaults to #{@default_await_timeout}
   - **:headers**, defaults to `[]`
+  - **:headers_fn**, defaults to `nil`
   - **:on_upgrade**, defaults to `nil`
   - **:frame_handler**, defaults to `nil`
   - **:frame_handler_state**, defaults to `nil`
@@ -135,6 +139,7 @@ defmodule OffBroadwayWebSocket.State do
       ws_timeout:         Keyword.get(opts,    :ws_timeout,    nil),
       await_timeout:      Keyword.get(opts,    :await_timeout, @default_await_timeout),
       headers:            Keyword.get(opts,    :headers,       []),
+      headers_fn:         Keyword.get(opts,    :headers_fn,    nil),
       on_upgrade:         Keyword.get(opts,    :on_upgrade,    nil),
       frame_handler:      Keyword.get(opts,    :frame_handler, nil),
       frame_handler_init_state: frame_handler_init_state,

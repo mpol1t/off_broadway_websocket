@@ -23,6 +23,7 @@ HexDocs includes the API reference and focused guides:
 
 - [Getting Started](docs/guides/getting_started.md)
 - [Configuration](docs/guides/configuration.md)
+- [Auth Refresh and Handshake Failures](docs/guides/auth_refresh_and_handshake_failures.md)
 - [On-Upgrade Bootstrap](docs/guides/on_upgrade_bootstrap.md)
 - [Frame Handler](docs/guides/frame_handler.md)
 - [Retry and Liveness](docs/guides/retry_and_liveness.md)
@@ -35,7 +36,7 @@ Add `off_broadway_websocket` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, "~> 1.2.0"}
+    {:off_broadway_websocket, "~> 1.2.1"}
   ]
 end
 ```
@@ -144,6 +145,7 @@ Required startup options:
 Common optional startup options:
 
 - `:headers`
+- `:headers_fn`
 - `:ws_timeout`
 - `:await_timeout`
 - `:telemetry_id`
@@ -155,6 +157,9 @@ Common optional startup options:
 - `:frame_handler_state`
 
 See [Configuration](docs/guides/configuration.md) for the full option contract and defaults.
+
+Use [Auth Refresh and Handshake Failures](docs/guides/auth_refresh_and_handshake_failures.md)
+for rotating websocket auth headers and troubleshooting failed upgrades.
 
 ## Telemetry
 

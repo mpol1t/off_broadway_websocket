@@ -1,6 +1,6 @@
 defmodule OffBroadwayWebsocket.MixProject do
   use Mix.Project
-  @version "1.2.0"
+  @version "1.2.1"
 
   def project do
     [
@@ -68,6 +68,7 @@ defmodule OffBroadwayWebsocket.MixProject do
         "LICENSE",
         "docs/guides/getting_started.md",
         "docs/guides/configuration.md",
+        "docs/guides/auth_refresh_and_handshake_failures.md",
         "docs/guides/on_upgrade_bootstrap.md",
         "docs/guides/frame_handler.md",
         "docs/guides/retry_and_liveness.md",

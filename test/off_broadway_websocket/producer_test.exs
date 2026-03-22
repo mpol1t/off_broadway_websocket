@@ -602,6 +602,21 @@ defmodule OffBroadwayWebSocket.ProducerTest do
 
       assert capture =~ "WebSocket handshake failed with status 400, headers: [\"returned_headers\"]"
     end
+
+    test "handles :fin handshake failures deterministically" do
+      state = %{State.new(@test_opts) | pid: self()}
+
+      capture =
+        capture_log(fn ->
+          assert {:stop, {:handshake_failure, {401, ["returned_headers"]}}, _state} =
+                   Producer.handle_info(
+                     {:gun_response, nil, :ref, :fin, 401, ["returned_headers"]},
+                     state
+                   )
+        end)
+
+      assert capture =~ "WebSocket handshake failed with status 401, headers: [\"returned_headers\"]"
+    end
   end
   
 

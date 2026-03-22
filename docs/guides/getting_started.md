@@ -16,7 +16,7 @@ Add the dependency to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:off_broadway_websocket, "~> 1.2.0"}
+    {:off_broadway_websocket, "~> 1.2.1"}
   ]
 end
 ```
@@ -69,5 +69,6 @@ end
 ## Next steps
 
 - See [Configuration](configuration.md) for producer options.
+- See [Auth Refresh and Handshake Failures](auth_refresh_and_handshake_failures.md) for auth header rotation.
 - See [On Upgrade Bootstrap](on_upgrade_bootstrap.md) for subscription-style APIs.
 - See [Frame Handler](frame_handler.md) for session-aware protocols such as channel-id multiplexing.

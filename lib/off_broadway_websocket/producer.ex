@@ -79,6 +79,16 @@ defmodule OffBroadwayWebSocket.Producer do
   end
 
   @impl true
+  def handle_info({:gun_response, _conn_pid, _stream_ref, :fin, status, headers}, state)
+      when status >= 400 do
+    Logger.error(
+      "[#{@me}] WebSocket handshake failed with status #{status}, headers: #{inspect(headers)}"
+    )
+
+    {:stop, {:handshake_failure, {status, headers}}, state}
+  end
+
+  @impl true
   def handle_info({:gun_ws, pid, _ref, msg}, state) do
     case Handlers.normalize(msg) do
       {:data, payload}  -> handle_data_frame(pid, payload, state)
