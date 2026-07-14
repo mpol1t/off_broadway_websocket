@@ -38,10 +38,11 @@ defmodule OffBroadwayWebSocket.ClientTest do
         {:ok, :dummy_protocol}
       end)
 
-      :meck.expect(:gun, :ws_upgrade, fn conn_pid, upgrade_path, upgrade_headers ->
+      :meck.expect(:gun, :ws_upgrade, fn conn_pid, upgrade_path, upgrade_headers, upgrade_ws_opts ->
         assert conn_pid == :dummy_conn_pid
         assert upgrade_path == path
         assert upgrade_headers == headers
+        assert upgrade_ws_opts == %{}
         :dummy_stream_ref
       end)
 
@@ -139,6 +140,38 @@ defmodule OffBroadwayWebSocket.ClientTest do
 
       assert :meck.num_calls(:gun, :open, 1)
       assert :meck.num_calls(:gun, :await_up, 1)
+
+      :meck.unload(:gun)
+    end
+
+    test "passes ws_opts from gun_opts to gun.ws_upgrade" do
+      url = "wss://example.com"
+      path = "/v1/test-endpoint"
+      ws_opts = %{keepalive: 10_000, silence_pings: false}
+      gun_opts = %{ws_opts: ws_opts, transport: :tls}
+      await_timeout = 50
+      headers = []
+
+      :meck.new(:gun, [:non_strict])
+
+      :meck.expect(:gun, :open, fn _host, _port, _opts ->
+        {:ok, :dummy_conn_pid}
+      end)
+
+      :meck.expect(:gun, :await_up, fn _conn_pid, _timeout ->
+        {:ok, :dummy_protocol}
+      end)
+
+      :meck.expect(:gun, :ws_upgrade, fn conn_pid, upgrade_path, upgrade_headers, upgrade_ws_opts ->
+        assert conn_pid == :dummy_conn_pid
+        assert upgrade_path == path
+        assert upgrade_headers == headers
+        assert upgrade_ws_opts == ws_opts
+        :dummy_stream_ref
+      end)
+
+      assert {:ok, %{conn_pid: :dummy_conn_pid, stream_ref: :dummy_stream_ref}} =
+               Client.connect(url, path, gun_opts, await_timeout, headers)
 
       :meck.unload(:gun)
     end
