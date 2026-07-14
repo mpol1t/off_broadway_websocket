@@ -42,7 +42,8 @@ defmodule OffBroadwayWebSocket.Client do
 
     with {:ok, conn_pid}  <- :gun.open(to_charlist(host), port, gun_opts),
          {:ok, _protocol} <- :gun.await_up(conn_pid, await_timeout) do
-      stream_ref = :gun.ws_upgrade(conn_pid, path, headers)
+      {ws_opts, _} = Map.pop(gun_opts, :ws_opts, %{})
+      stream_ref = :gun.ws_upgrade(conn_pid, path, headers, ws_opts)
       {:ok, %{conn_pid: conn_pid, stream_ref: stream_ref}}
     else
       {:error, reason} -> {:error, reason}
