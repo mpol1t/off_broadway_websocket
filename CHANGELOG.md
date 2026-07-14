@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
+## [1.2.2] - 2026-07-14
+
+### Changed
+
+- Fixed `gun_opts[:ws_opts]` handling so documented websocket upgrade options are forwarded via `:gun.ws_upgrade/4`.
+
+### Tests
+
+- Added coverage verifying `ws_opts` is passed through to the Gun websocket upgrade call.
+
 ## [1.2.1] - 2026-03-22
 
 ### Added
